@@ -29,22 +29,34 @@
     </section>
 
     <section id="app" hidden>
+      <div class="listbar">
+        <select id="listSelect" aria-label="Välj lista"></select>
+        <button id="listMenu" class="icon" aria-label="Hantera lista">⋯</button>
+        <button id="newList" class="chip">+ Ny lista</button>
+      </div>
+
       <form id="addForm" autocomplete="off">
         <div class="row">
-          <input id="name" placeholder="Vad ska handlas?" required enterkeyhint="done">
+          <div class="namewrap">
+            <input id="name" placeholder="Vad ska handlas?" required enterkeyhint="done" autocomplete="off" autocapitalize="sentences">
+            <ul id="suggestions" hidden></ul>
+          </div>
           <input id="qty" placeholder="Antal" class="qty" inputmode="text">
           <button class="primary add" aria-label="Lägg till">+</button>
         </div>
-        <label class="repeat">
-          Återkommande:
-          <select id="interval">
-            <option value="0">Nej</option>
-            <option value="7">Varje vecka</option>
-            <option value="14">Varannan vecka</option>
-            <option value="28">Var fjärde vecka</option>
-            <option value="custom">Var X:e dag…</option>
-          </select>
-        </label>
+        <div class="formfoot">
+          <label class="repeat">
+            Återkommande:
+            <select id="interval">
+              <option value="0">Nej</option>
+              <option value="7">Varje vecka</option>
+              <option value="14">Varannan vecka</option>
+              <option value="28">Var fjärde vecka</option>
+              <option value="custom">Var X:e dag…</option>
+            </select>
+          </label>
+          <button type="button" id="sortToggle" class="chip"></button>
+        </div>
       </form>
 
       <ul id="items"></ul>
@@ -59,6 +71,12 @@
       </details>
     </section>
   </main>
+
+  <dialog id="sheet">
+    <h2 id="sheetTitle"></h2>
+    <div id="sheetBody"></div>
+    <button id="sheetClose" class="link">Avbryt</button>
+  </dialog>
 
   <script type="module" src="app.js"></script>
 </body>

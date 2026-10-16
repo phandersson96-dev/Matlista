@@ -1,6 +1,6 @@
 // Sparar appens filer så att den startar snabbt och även utan nät.
 // Listan själv synkas av Firebase, som har en egen offline-cache.
-const CACHE = "matlista-v1";
+const CACHE = "matlista-v2";
 const FILES = ["./", "index.html", "style.css", "app.js", "config.js", "manifest.webmanifest", "icons/icon-192.png"];
 
 self.addEventListener("install", (e) => {
