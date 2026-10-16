@@ -371,3 +371,9 @@ body.shopping #items li { padding: 2px 14px; }
 select option { background: var(--card); color: var(--text); }
 .listpick select { max-width: none; padding: 0; }
 #items li.group { display: block; padding: 14px 16px 6px; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); background: var(--bg); }
+/* Att kolla: ✓ ska köpas, ✕ finns hemma */
+#items li.tocheck input[type=checkbox] { display: none; }
+button.decide { flex: none; width: 38px; height: 38px; margin: 4px 2px; border-radius: 50%; border: 1px solid var(--line); background: transparent; font-size: 16px; line-height: 1; }
+button.decide.yes { color: var(--green); border-color: var(--green); }
+button.decide.no { color: var(--muted); }
+button.decide:last-child { margin-right: 8px; }

@@ -9,7 +9,7 @@ import {
   runTransaction, writeBatch, serverTimestamp, Timestamp, increment,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { firebaseConfig, recipeImportUrl } from "./config.js";
-import { scaleIngredient, isBasic, DEFAULT_BASICS, mergeQty, itemKey } from "./ingredients.js?v=23";
+import { scaleIngredient, isBasic, DEFAULT_BASICS, mergeQty, itemKey } from "./ingredients.js?v=24";
 
 const DAY = 24 * 60 * 60 * 1000;
 // Standardlistan. Varor från innan det fanns flera listor saknar listId och hör hit.
@@ -446,26 +446,33 @@ function renderItems() {
   const byMode = sortMode === "alpha"
     ? (a, b) => a.name.localeCompare(b.name, "sv")
     : (a, b) => addedAt(b) - addedAt(a);
-  // Ordning: vanliga varor, sedan återkommande (basvaror man alltid köper), sist avbockade.
-  const group = (x) => (x.checked ? 2 : x.recurringId ? 1 : 0);
+  // Ordning: att kolla (okänt om det finns hemma), vanliga varor, återkommande, sist avbockade.
+  const group = (x) => (x.checked ? 2 : x.toCheck ? -1 : x.recurringId ? 1 : 0);
   const sorted = mine.sort((a, b) => (group(a) - group(b)) || byMode(a, b));
-  let lastGroup = 0;
+  const hasCheck = sorted.some((x) => group(x) === -1);
+  const heading = (text) => {
+    const h = document.createElement("li");
+    h.className = "group";
+    h.textContent = text;
+    list.append(h);
+  };
+  let lastGroup = null;
   for (const it of sorted) {
     const g = group(it);
-    if (g === 1 && lastGroup !== 1) {
-      const h = document.createElement("li");
-      h.className = "group";
-      h.textContent = "Återkommande";
-      list.append(h);
+    if (g !== lastGroup) {
+      if (g === -1) heading("Att kolla · finns det hemma?");
+      else if (g === 0 && hasCheck) heading("Att handla");
+      else if (g === 1) heading("Återkommande");
     }
     lastGroup = g;
     const li = document.createElement("li");
-    li.className = it.checked ? "checked" : "";
+    li.className = it.checked ? "checked" : it.toCheck ? "tocheck" : "";
     const label = document.createElement("label");
     const cb = document.createElement("input");
     cb.type = "checkbox";
     cb.checked = !!it.checked;
-    cb.disabled = !shopping;
+    // Okollade varor går inte att bocka av, så att inget hamnar i beställningen av misstag.
+    cb.disabled = !shopping || !!it.toCheck;
     cb.onchange = () => updateDoc(doc(itemsCol, it.id), { checked: cb.checked });
     const text = document.createElement("span");
     text.className = "text";
@@ -485,12 +492,26 @@ function renderItems() {
       who.title = `Tillagd av ${it.addedBy}`;
       label.append(who);
     }
-    const more = document.createElement("button");
-    more.className = "icon more";
-    more.textContent = "⋯";
-    more.setAttribute("aria-label", `Mer för ${it.name}`);
-    more.onclick = () => itemMenu(it);
-    li.append(label, more);
+    if (it.toCheck) {
+      const yes = document.createElement("button");
+      yes.className = "decide yes";
+      yes.textContent = "✓";
+      yes.setAttribute("aria-label", `${it.name} ska köpas`);
+      yes.onclick = () => approveItem(it);
+      const no = document.createElement("button");
+      no.className = "decide no";
+      no.textContent = "✕";
+      no.setAttribute("aria-label", `${it.name} finns hemma`);
+      no.onclick = () => removeItems([it], `${it.name} finns hemma`);
+      li.append(label, yes, no);
+    } else {
+      const more = document.createElement("button");
+      more.className = "icon more";
+      more.textContent = "⋯";
+      more.setAttribute("aria-label", `Mer för ${it.name}`);
+      more.onclick = () => itemMenu(it);
+      li.append(label, more);
+    }
     list.append(li);
   }
   const left = mine.filter((i) => !i.checked).length;
@@ -498,6 +519,17 @@ function renderItems() {
   show("empty", mine.length === 0);
   show("done", mine.some((i) => i.checked));
   renderLists();
+}
+
+// ✓ på en okollad vara: den ska köpas. Finns varan redan på listan läggs mängden ihop med den.
+async function approveItem(it) {
+  const same = items.find((x) => x.id !== it.id && listOf(x) === listOf(it) && !x.checked && !x.toCheck && itemKey(x.name) === itemKey(it.name));
+  if (!same) { await updateDoc(doc(itemsCol, it.id), { toCheck: false }); return; }
+  const from = [...new Set([...(same.fromRecipe || "").split(", "), ...(it.fromRecipe || "").split(", ")].filter(Boolean))].join(", ");
+  const batch = writeBatch(db);
+  batch.update(doc(itemsCol, same.id), { qty: mergeQty(same.qty, it.qty), fromRecipe: from });
+  batch.delete(doc(itemsCol, it.id));
+  await batch.commit();
 }
 
 function removeItem(it) {
@@ -806,7 +838,7 @@ function copyWeek(srcId) {
     }
   }));
 
-  const commit = async (listId) => {
+  const commit = async (listId, toCheck = false) => {
     const batch = writeBatch(db);
     const data = { updatedAt: serverTimestamp() };
     for (const k of MEAL_KEYS) {
@@ -821,14 +853,14 @@ function copyWeek(srcId) {
         if (!meal.unchecked.has(j)) entries.push({ ...scaleIngredient(line, factor), recipe: meal.recipe.title });
       });
     }
-    queueItems(batch, entries, listId);
+    queueItems(batch, entries, listId, toCheck);
     for (const id of new Set(meals.map((m) => m.recipe.id))) {
       batch.update(doc(recipesCol, id), { timesPlanned: increment(1), lastPlanned: serverTimestamp() });
     }
     await batch.commit();
     entries.forEach((e) => remember(e.name, e.qty));
     renderMenu();
-    showUndo(`Vecka ${isoWeek(mondayFromId(srcId)).week} kopierad${entries.length ? `, ${entries.length} varor på listan` : ""}`, null);
+    showUndo(`Vecka ${isoWeek(mondayFromId(srcId)).week} kopierad${entries.length ? `, ${entries.length} varor ${toCheck ? "att kolla" : "på listan"}` : ""}`, null);
   };
 
   if (!meals.length) { commit(MAIN_LIST); return; }
@@ -885,12 +917,21 @@ function copyWeek(srcId) {
       body.append(h, stepper, list);
       render();
     }
+    const unsure = button("Vet inte vad som finns hemma", async () => { $("sheet").close(); await commit(listId, true); }, "chip wide");
     const actions = document.createElement("div");
     actions.className = "actions";
-    actions.append(go);
+    actions.append(go, unsure, unsureHint());
     body.append(actions);
     updateButton();
   });
+}
+
+// Förklaring under knappen "Vet inte vad som finns hemma".
+function unsureHint() {
+  const p = document.createElement("p");
+  p.className = "muted small center";
+  p.textContent = "Varorna hamnar under Att kolla på listan. Där trycker ni ✓ om den ska köpas eller ✕ om den finns hemma.";
+  return p;
 }
 
 function renderMenu() {
@@ -1585,9 +1626,13 @@ function planRecipe(r, portions = 4) {
     h.className = "label";
     h.textContent = "Bocka ur det ni redan har hemma";
     body.append(h, checklist);
+    const unsure = button("Vet inte vad som finns hemma", async () => {
+      $("sheet").close();
+      await addPlannedRecipe(r, { ...state, toCheck: true }, base, addDays(thisWeek, state.week * 7));
+    }, "chip wide");
     const actions = document.createElement("div");
     actions.className = "actions";
-    actions.append(go);
+    actions.append(go, unsure, unsureHint());
     body.append(actions);
     update();
   });
@@ -1611,10 +1656,11 @@ function seg(options, get, set) {
 
 // Lägger varor på listan. Finns varan redan oavbockad läggs mängderna ihop i stället för en ny rad.
 // entries: [{ name, qty, recipe }]
-function queueItems(batch, entries, listId) {
+// toCheck: varorna hamnar i "Att kolla" och slås bara ihop med andra okollade varor.
+function queueItems(batch, entries, listId, toCheck = false) {
   const rows = new Map();
   for (const it of items) {
-    if (listOf(it) === listId && !it.checked) rows.set(itemKey(it.name), { ref: doc(itemsCol, it.id), data: { ...it }, isNew: false });
+    if (listOf(it) === listId && !it.checked && !!it.toCheck === toCheck) rows.set(itemKey(it.name), { ref: doc(itemsCol, it.id), data: { ...it }, isNew: false });
   }
   for (const e of entries) {
     const row = rows.get(itemKey(e.name));
@@ -1627,7 +1673,7 @@ function queueItems(batch, entries, listId) {
     } else {
       rows.set(itemKey(e.name), {
         ref: doc(itemsCol), isNew: true, changed: true,
-        data: { name: e.name, qty: e.qty, listId, checked: false, recurringId: null, fromRecipe: e.recipe || "", addedBy: myInitial() },
+        data: { name: e.name, qty: e.qty, listId, checked: false, recurringId: null, fromRecipe: e.recipe || "", addedBy: myInitial(), toCheck },
       });
     }
   }
@@ -1653,7 +1699,7 @@ async function addPlannedRecipe(r, state, base, monday) {
     const s = scaleIngredient(line, factor);
     added.push({ ...s, recipe: r.title });
   });
-  queueItems(batch, added, state.listId);
+  queueItems(batch, added, state.listId, !!state.toCheck);
   // Rätten skrivs in i veckomenyn, under det som redan står där. Vilka recept som ligger där
   // sparas också, så att veckan kan kopieras med varorna senare.
   const id = weekId(monday);
@@ -1670,7 +1716,7 @@ async function addPlannedRecipe(r, state, base, monday) {
   await batch.commit();
   added.forEach((s) => remember(s.name, s.qty));
   const where = `${DAYS[state.day].toLowerCase()} ${state.meal === "lunch" ? "lunch" : "middag"}`;
-  showUndo(added.length ? `${r.title} på ${where}, ${added.length} varor på listan` : `${r.title} på ${where}`, null);
+  showUndo(added.length ? `${r.title} på ${where}, ${added.length} varor ${state.toCheck ? "att kolla" : "på listan"}` : `${r.title} på ${where}`, null);
 }
 
 $("editBasics").onclick = () => {
