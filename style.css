@@ -366,3 +366,6 @@ body.shopping #items li { padding: 2px 14px; }
 .listpick #listName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .listpick svg { flex: none; color: var(--muted); }
 .listpick select { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; font-size: 16px; }
+/* Inbyggda rullgardinsmenyer följer ljust/mörkt läge */
+:root { color-scheme: light dark; }
+select option { background: var(--card); color: var(--text); }
