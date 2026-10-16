@@ -9,7 +9,7 @@ import {
   runTransaction, writeBatch, serverTimestamp, Timestamp, increment,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { firebaseConfig, recipeImportUrl } from "./config.js";
-import { scaleIngredient, isBasic, DEFAULT_BASICS, mergeQty, itemKey } from "./ingredients.js?v=22";
+import { scaleIngredient, isBasic, DEFAULT_BASICS, mergeQty, itemKey } from "./ingredients.js?v=23";
 
 const DAY = 24 * 60 * 60 * 1000;
 // Standardlistan. Varor från innan det fanns flera listor saknar listId och hör hit.
@@ -446,8 +446,19 @@ function renderItems() {
   const byMode = sortMode === "alpha"
     ? (a, b) => a.name.localeCompare(b.name, "sv")
     : (a, b) => addedAt(b) - addedAt(a);
-  const sorted = mine.sort((a, b) => (a.checked - b.checked) || byMode(a, b));
+  // Ordning: vanliga varor, sedan återkommande (basvaror man alltid köper), sist avbockade.
+  const group = (x) => (x.checked ? 2 : x.recurringId ? 1 : 0);
+  const sorted = mine.sort((a, b) => (group(a) - group(b)) || byMode(a, b));
+  let lastGroup = 0;
   for (const it of sorted) {
+    const g = group(it);
+    if (g === 1 && lastGroup !== 1) {
+      const h = document.createElement("li");
+      h.className = "group";
+      h.textContent = "Återkommande";
+      list.append(h);
+    }
+    lastGroup = g;
     const li = document.createElement("li");
     li.className = it.checked ? "checked" : "";
     const label = document.createElement("label");
@@ -467,7 +478,6 @@ function renderItems() {
     }
     label.append(cb, text);
     if (it.qty) label.append(badge(it.qty));
-    if (it.recurringId) label.append(badge("🔁"));
     if (it.addedBy && it.addedBy !== myInitial()) {
       const who = document.createElement("span");
       who.className = "who";

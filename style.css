@@ -369,3 +369,5 @@ body.shopping #items li { padding: 2px 14px; }
 /* Inbyggda rullgardinsmenyer följer ljust/mörkt läge */
 :root { color-scheme: light dark; }
 select option { background: var(--card); color: var(--text); }
+.listpick select { max-width: none; padding: 0; }
+#items li.group { display: block; padding: 14px 16px 6px; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); background: var(--bg); }
