@@ -209,12 +209,14 @@ export function extractFromText(html) {
 
   const text = lines.join("\n");
   const servings = text.match(/(\d+)\s*(portioner|port\b|personer|pers\b)/i);
+  const time = text.match(/(?:tillagningstid|total tid|tid)\s*:?\s*(?:ca\.?\s*)?(\d+)\s*(min|minuter|tim|timmar|h)\b/i);
   return {
     title: metaContent(html, "og:title") || clean((html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i) || [])[1] || "") || pageTitle(html),
     servings: servings ? parseInt(servings[1], 10) : null,
     ingredients,
     instructions,
     image: metaContent(html, "og:image"),
+    minutes: time ? parseInt(time[1], 10) * (/^(tim|h)/i.test(time[2]) ? 60 : 1) : null,
     fromText: true,
   };
 }
