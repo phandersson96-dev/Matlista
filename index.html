@@ -8,7 +8,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="style.css?v=6">
+  <link rel="stylesheet" href="style.css?v=7">
 </head>
 <body>
   <header>
@@ -29,6 +29,23 @@
     </section>
 
     <section id="app" hidden>
+     <div id="recipeView" hidden>
+      <form id="importForm" autocomplete="off">
+        <div class="row">
+          <input id="importUrl" type="url" inputmode="url" placeholder="Klistra in receptlänk" required>
+          <button class="primary" id="importBtn">Hämta</button>
+        </div>
+        <p id="importMsg" class="muted small" hidden></p>
+      </form>
+      <div class="recipebar">
+        <button id="newRecipe" class="chip">+ Skriv in eget</button>
+        <button id="editBasics" class="chip">Basvaror</button>
+      </div>
+      <input id="recipeSearch" type="search" placeholder="Sök bland recepten" autocomplete="off">
+      <ul id="recipes"></ul>
+      <p id="noRecipes" class="muted center small" hidden>Inga recept än. Klistra in en länk från t.ex. ICA, Köket eller Tasteline, eller dela receptet till Matlista direkt från webbläsaren.</p>
+     </div>
+
      <div id="listView">
       <div class="listbar">
         <select id="listSelect" aria-label="Välj lista"></select>
@@ -92,8 +109,9 @@
      </div>
 
       <nav id="tabs">
-        <button data-tab="list">🛒<span>Inköp</span></button>
+        <button data-tab="recipes">📖<span>Recept</span></button>
         <button data-tab="menu">🍽️<span>Veckomeny</span></button>
+        <button data-tab="list">🛒<span>Inköp</span></button>
       </nav>
     </section>
   </main>
@@ -109,6 +127,6 @@
     <button id="sheetClose" class="link">Avbryt</button>
   </dialog>
 
-  <script type="module" src="app.js?v=6"></script>
+  <script type="module" src="app.js?v=7"></script>
 </body>
 </html>

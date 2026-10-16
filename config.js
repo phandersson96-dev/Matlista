@@ -8,3 +8,6 @@ export const firebaseConfig = {
   messagingSenderId: "593908507273",
   appId: "1:593908507273:web:bf61c39a06b0d95773dc58",
 };
+
+// Adressen till receptimporten i Cloudflare (se worker/recept.js). Tom = bara manuell inmatning.
+export const recipeImportUrl = "";
