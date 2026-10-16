@@ -9,7 +9,7 @@ import {
   runTransaction, writeBatch, serverTimestamp, Timestamp, increment,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { firebaseConfig, recipeImportUrl } from "./config.js";
-import { scaleIngredient, isBasic, DEFAULT_BASICS } from "./ingredients.js";
+import { scaleIngredient, isBasic, DEFAULT_BASICS, mergeQty, itemKey } from "./ingredients.js";
 
 const DAY = 24 * 60 * 60 * 1000;
 // Standardlistan. Varor från innan det fanns flera listor saknar listId och hör hit.
@@ -1083,15 +1083,34 @@ async function addPlannedRecipe(r, state, base, monday) {
   const factor = state.portions / base;
   const batch = writeBatch(db);
   const added = [];
+  // Finns varan redan oavbockad på listan läggs mängderna ihop i stället för en ny rad.
+  const rows = new Map();
+  for (const it of items) {
+    if (listOf(it) === state.listId && !it.checked) rows.set(itemKey(it.name), { ref: doc(itemsCol, it.id), data: { ...it }, isNew: false });
+  }
   (r.ingredients || []).forEach((line, i) => {
     if (state.unchecked.has(i)) return;
     const s = scaleIngredient(line, factor);
     added.push(s);
-    batch.set(doc(itemsCol), {
-      name: s.name, qty: s.qty, listId: state.listId, checked: false, recurringId: null,
-      fromRecipe: r.title, addedBy: myInitial(), createdAt: serverTimestamp(),
-    });
+    const row = rows.get(itemKey(s.name));
+    if (row) {
+      row.data.qty = mergeQty(row.data.qty, s.qty);
+      const from = (row.data.fromRecipe || "").split(", ").filter(Boolean);
+      if (!from.includes(r.title)) from.push(r.title);
+      row.data.fromRecipe = from.join(", ");
+      row.changed = true;
+    } else {
+      rows.set(itemKey(s.name), {
+        ref: doc(itemsCol), isNew: true, changed: true,
+        data: { name: s.name, qty: s.qty, listId: state.listId, checked: false, recurringId: null, fromRecipe: r.title, addedBy: myInitial() },
+      });
+    }
   });
+  for (const row of rows.values()) {
+    if (!row.changed) continue;
+    if (row.isNew) batch.set(row.ref, { ...row.data, createdAt: serverTimestamp() });
+    else batch.update(row.ref, { qty: row.data.qty, fromRecipe: row.data.fromRecipe });
+  }
   // Rätten skrivs in i veckomenyn, under det som redan står där.
   const id = weekId(monday);
   const key = `d${state.day}_${state.meal}`;
