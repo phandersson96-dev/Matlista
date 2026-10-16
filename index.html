@@ -8,7 +8,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="style.css?v=5">
+  <link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
   <header>
@@ -29,6 +29,7 @@
     </section>
 
     <section id="app" hidden>
+     <div id="listView">
       <div class="listbar">
         <select id="listSelect" aria-label="Välj lista"></select>
         <button id="listMenu" class="icon" aria-label="Hantera lista">⋯</button>
@@ -75,6 +76,25 @@
         <ul id="recurring"></ul>
         <p class="muted small">Varan läggs tillbaka på listan automatiskt när det har gått så många dagar sedan ni senast beställde den.</p>
       </details>
+     </div>
+
+     <div id="menuView" hidden>
+      <div class="weekbar">
+        <button id="weekPrev" class="icon big" aria-label="Föregående vecka">‹</button>
+        <div class="weektitle">
+          <b id="weekNo"></b>
+          <span id="weekDates" class="muted small"></span>
+        </div>
+        <button id="weekNext" class="icon big" aria-label="Nästa vecka">›</button>
+      </div>
+      <button id="weekToday" class="chip" hidden>Till denna vecka</button>
+      <div id="days"></div>
+     </div>
+
+      <nav id="tabs">
+        <button data-tab="list">🛒<span>Inköp</span></button>
+        <button data-tab="menu">🍽️<span>Veckomeny</span></button>
+      </nav>
     </section>
   </main>
 
@@ -89,6 +109,6 @@
     <button id="sheetClose" class="link">Avbryt</button>
   </dialog>
 
-  <script type="module" src="app.js?v=5"></script>
+  <script type="module" src="app.js?v=6"></script>
 </body>
 </html>

@@ -23,6 +23,7 @@ const itemsCol = collection(db, "items");
 const recurringCol = collection(db, "recurring");
 const listsCol = collection(db, "lists");
 const historyCol = collection(db, "history");
+const menusCol = collection(db, "menus");
 
 const $ = (id) => document.getElementById(id);
 const show = (id, on) => { $(id).hidden = !on; };
@@ -31,6 +32,7 @@ let items = [];
 let recurring = [];
 let lists = [];
 let history = [];
+let menus = {};
 let historyLoaded = false;
 let listsLoaded = false;
 let pendingList = null;
@@ -115,6 +117,10 @@ function start(user) {
       setDoc(doc(listsCol, MAIN_LIST), { name: "Veckohandling", createdAt: serverTimestamp() });
     }
     renderLists();
+  });
+  watch(menusCol, (docs) => {
+    menus = Object.fromEntries(docs.map((d) => [d.id, d]));
+    renderMenu();
   });
   watch(historyCol, (docs) => {
     history = docs;
@@ -591,6 +597,136 @@ function badge(t) {
   return s;
 }
 
+// ---------- Flikar ----------
+
+let tab = local.get("tab", "list");
+function setTab(t) {
+  tab = t;
+  local.set("tab", t);
+  show("listView", t === "list");
+  show("menuView", t === "menu");
+  document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === t));
+  if (t === "menu") renderMenu();
+  window.scrollTo(0, 0);
+}
+document.querySelectorAll("#tabs button").forEach((b) => { b.onclick = () => setTab(b.dataset.tab); });
+
+// ---------- Veckomeny ----------
+
+const DAYS = ["Måndag", "Tisdag", "Onsdag", "Torsdag", "Fredag", "Lördag", "Söndag"];
+const MEALS = [["lunch", "Lunch"], ["dinner", "Middag"]];
+
+function mondayOf(date) {
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return d;
+}
+function addDays(date, n) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + n);
+  return d;
+}
+// ISO-veckonummer: veckan hör till det år dess torsdag ligger i.
+function isoWeek(monday) {
+  const thu = addDays(monday, 3);
+  const jan4 = new Date(thu.getFullYear(), 0, 4);
+  const week = 1 + Math.round((thu - mondayOf(jan4)) / (7 * DAY));
+  return { year: thu.getFullYear(), week };
+}
+const weekId = (monday) => {
+  const { year, week } = isoWeek(monday);
+  return `${year}-W${String(week).padStart(2, "0")}`;
+};
+
+let weekStart = mondayOf(new Date());
+let editing = null;
+
+$("weekPrev").onclick = () => { weekStart = addDays(weekStart, -7); renderMenu(); };
+$("weekNext").onclick = () => { weekStart = addDays(weekStart, 7); renderMenu(); };
+$("weekToday").onclick = () => { weekStart = mondayOf(new Date()); renderMenu(); };
+
+function renderMenu() {
+  if (tab !== "menu" || editing) return;
+  const id = weekId(weekStart);
+  const data = menus[id] || {};
+  const fmt = (d) => d.toLocaleDateString("sv-SE", { day: "numeric", month: "short" });
+  $("weekNo").textContent = `Vecka ${isoWeek(weekStart).week}`;
+  $("weekDates").textContent = `${fmt(weekStart)} – ${fmt(addDays(weekStart, 6))}`;
+  const thisWeek = weekId(mondayOf(new Date())) === id;
+  show("weekToday", !thisWeek);
+  const todayIdx = thisWeek ? (new Date().getDay() + 6) % 7 : -1;
+
+  const days = $("days");
+  days.innerHTML = "";
+  DAYS.forEach((dayName, i) => {
+    const card = document.createElement("div");
+    card.className = "day" + (i === todayIdx ? " today" : "");
+    const h = document.createElement("h3");
+    h.textContent = dayName;
+    const date = document.createElement("span");
+    date.className = "muted";
+    date.textContent = i === todayIdx ? "idag" : fmt(addDays(weekStart, i));
+    h.append(date);
+    card.append(h);
+    for (const [key, label] of MEALS) {
+      const field = `d${i}_${key}`;
+      const row = document.createElement("div");
+      row.className = "meal";
+      const kind = document.createElement("span");
+      kind.className = "kind";
+      kind.textContent = label;
+      row.append(kind, mealView(id, field, data[field] || ""));
+      card.append(row);
+    }
+    days.append(card);
+  });
+}
+
+function mealView(id, field, text) {
+  const view = document.createElement("div");
+  view.className = "view" + (text ? "" : " empty");
+  if (text) linkify(view, text); else view.textContent = "Lägg till…";
+  view.onclick = (e) => {
+    if (e.target.closest("a")) return;
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.rows = 1;
+    const grow = () => { ta.style.height = "auto"; ta.style.height = ta.scrollHeight + "px"; };
+    ta.oninput = grow;
+    ta.onblur = async () => {
+      const value = ta.value.replace(/\s+$/, "");
+      editing = null;
+      if (value !== text) {
+        await setDoc(doc(menusCol, id), { [field]: value, updatedAt: serverTimestamp() }, { merge: true });
+      }
+      renderMenu();
+    };
+    editing = field;
+    view.replaceWith(ta);
+    grow();
+    ta.focus();
+  };
+  return view;
+}
+
+// Gör webbadresser klickbara och visar dem kortare, t.ex. "ica.se/recept/kycklinggratang…".
+function linkify(el, text) {
+  const re = /(https?:\/\/[^\s]+|www\.[^\s]+)/g;
+  let last = 0;
+  for (const m of text.matchAll(re)) {
+    el.append(text.slice(last, m.index));
+    const url = m[0].startsWith("http") ? m[0] : "https://" + m[0];
+    const a = document.createElement("a");
+    a.href = url;
+    a.target = "_blank";
+    a.rel = "noopener";
+    a.textContent = "🔗 " + m[0].replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "");
+    el.append(a);
+    last = m.index + m[0].length;
+  }
+  el.append(text.slice(last));
+}
+
 // ---------- Meny ----------
 
 function openSheet(title, build) {
@@ -624,3 +760,5 @@ if ("serviceWorker" in navigator) {
     });
   });
 }
+
+setTab(tab);

@@ -174,3 +174,47 @@ body.shopping #items li { padding: 10px 14px; }
 body.shopping #items li label { cursor: pointer; }
 /* Utanför Handla-läget syns ingen ruta att bocka i; avbockade varor är fortfarande överstrukna. */
 body:not(.shopping) #items input[type=checkbox] { display: none; }
+
+/* ---------- Flikar ---------- */
+#tabs {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 8;
+  display: flex; background: var(--card); border-top: 1px solid var(--line);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+#tabs button {
+  flex: 1; background: none; border: 0; color: var(--muted);
+  padding: 8px 0 10px; font-size: 20px;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+}
+#tabs button span { font-size: 13px; }
+#tabs button.active { color: var(--green); font-weight: 600; }
+body.shopping #tabs { display: none; }
+main { padding-bottom: 100px; }
+#undo { bottom: calc(76px + env(safe-area-inset-bottom)); }
+body.shopping #undo { bottom: max(16px, env(safe-area-inset-bottom)); }
+
+/* ---------- Veckomeny ---------- */
+.weekbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.weektitle { text-align: center; display: flex; flex-direction: column; }
+.weektitle b { font-size: 19px; }
+button.icon.big { font-size: 30px; padding: 4px 16px; color: var(--text); }
+#weekToday { display: block; margin: 0 auto 12px; }
+#weekToday[hidden] { display: none; }
+.day {
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+  padding: 10px 14px; margin-bottom: 10px;
+}
+.day.today { border-color: var(--green); box-shadow: inset 4px 0 0 var(--green); }
+.day h3 { margin: 0 0 6px; font-size: 16px; display: flex; justify-content: space-between; }
+.day h3 .muted { font-weight: 400; font-size: 14px; }
+.meal { display: flex; gap: 10px; padding: 6px 0; border-top: 1px solid var(--line); }
+.meal:first-of-type { border-top: 0; }
+.meal .kind { width: 58px; flex: none; color: var(--muted); font-size: 14px; padding-top: 2px; }
+.meal .view { flex: 1; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; min-height: 24px; cursor: text; }
+.meal .view.empty { color: var(--muted); opacity: .6; }
+.meal .view a { color: var(--green); display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+.meal textarea {
+  flex: 1; min-width: 0; font: inherit; resize: none; overflow: hidden;
+  padding: 4px 8px; margin: -4px 0; border: 1px solid var(--green); border-radius: 8px;
+  background: var(--bg); color: var(--text);
+}
