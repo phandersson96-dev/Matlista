@@ -35,6 +35,7 @@ let historyLoaded = false;
 let listsLoaded = false;
 let pendingList = null;
 let unsubscribers = [];
+let currentUser = null;
 
 // Sådant som bara gäller den här telefonen sparas lokalt.
 const local = {
@@ -47,6 +48,8 @@ let sortMode = local.get("sort", "recent");
 const listOf = (x) => x.listId || MAIN_LIST;
 const onCurrent = (x) => listOf(x) === currentList;
 const normalize = (s) => s.trim().toLocaleLowerCase("sv");
+// Initialen på den som lade till varan, t.ex. P eller E.
+const myInitial = () => ((currentUser?.displayName || currentUser?.email || "?").trim()[0] || "?").toLocaleUpperCase("sv");
 const historyId = (name) => "h_" + encodeURIComponent(normalize(name));
 
 // ---------- Inloggning ----------
@@ -87,6 +90,7 @@ function denied(user) {
 }
 
 function start(user) {
+  currentUser = user;
   const onError = (err) => { if (err.code === "permission-denied") denied(user); else console.error(err); };
   const watch = (col, fn) => unsubscribers.push(onSnapshot(col, (snap) => fn(snap.docs.map((d) => ({ id: d.id, ...d.data() }))), onError));
   watch(itemsCol, (docs) => {
@@ -225,11 +229,11 @@ $("addForm").onsubmit = async (e) => {
   if (intervalDays > 0) {
     // Ny återkommande vara: läggs på listan direkt, nästa gång räknas från när den beställs.
     const ref = await addDoc(recurringCol, {
-      name, qty, intervalDays, listId, onList: true, nextDue: null, createdAt: serverTimestamp(),
+      name, qty, intervalDays, listId, onList: true, nextDue: null, addedBy: myInitial(), createdAt: serverTimestamp(),
     });
     recurringId = ref.id;
   }
-  await addDoc(itemsCol, { name, qty, listId, checked: false, recurringId, createdAt: serverTimestamp() });
+  await addDoc(itemsCol, { name, qty, listId, checked: false, recurringId, addedBy: myInitial(), createdAt: serverTimestamp() });
   remember(name, qty);
 };
 
@@ -351,7 +355,7 @@ async function addRecurringToList(recurringId) {
     const r = snap.data();
     tx.update(rRef, { onList: true });
     tx.set(doc(itemsCol), {
-      name: r.name, qty: r.qty || "", listId: listOf(r), checked: false, recurringId, createdAt: serverTimestamp(),
+      name: r.name, qty: r.qty || "", listId: listOf(r), checked: false, recurringId, addedBy: r.addedBy || null, createdAt: serverTimestamp(),
     });
   });
 }
@@ -403,6 +407,13 @@ function renderItems() {
     label.append(cb, text);
     if (it.qty) label.append(badge(it.qty));
     if (it.recurringId) label.append(badge("🔁"));
+    if (it.addedBy) {
+      const who = document.createElement("span");
+      who.className = "who";
+      who.textContent = it.addedBy;
+      who.title = `Tillagd av ${it.addedBy}`;
+      label.append(who);
+    }
     const more = document.createElement("button");
     more.className = "icon";
     more.textContent = "⋯";
@@ -416,11 +427,41 @@ function renderItems() {
   renderLists();
 }
 
-async function removeItem(it) {
+function removeItem(it) {
+  return removeItems([it], `${it.name} togs bort`);
+}
+
+// Tar bort varor och visar "Ångra" en stund, så att ett felklick går att backa.
+async function removeItems(toRemove, message) {
+  const savedItems = toRemove.map(({ id, ...data }) => ({ id, data }));
+  const savedRecurring = recurring
+    .filter((r) => toRemove.some((i) => i.recurringId === r.id))
+    .map((r) => ({ id: r.id, onList: !!r.onList, nextDue: r.nextDue || null }));
   const batch = writeBatch(db);
-  batch.delete(doc(itemsCol, it.id));
-  if (it.recurringId) scheduleNext(batch, it.recurringId);
+  for (const it of toRemove) {
+    batch.delete(doc(itemsCol, it.id));
+    if (it.recurringId) scheduleNext(batch, it.recurringId);
+  }
   await batch.commit();
+  showUndo(message, async () => {
+    const undo = writeBatch(db);
+    savedItems.forEach(({ id, data }) => undo.set(doc(itemsCol, id), data));
+    savedRecurring.forEach(({ id, onList, nextDue }) => undo.update(doc(recurringCol, id), { onList, nextDue }));
+    await undo.commit();
+  });
+}
+
+let undoTimer = null;
+function showUndo(message, restore) {
+  clearTimeout(undoTimer);
+  $("undoText").textContent = message;
+  $("undoBtn").onclick = () => {
+    clearTimeout(undoTimer);
+    show("undo", false);
+    restore();
+  };
+  show("undo", true);
+  undoTimer = setTimeout(() => show("undo", false), 7000);
 }
 
 function itemMenu(it) {
@@ -460,13 +501,7 @@ async function moveItem(it, listId) {
 $("done").onclick = async () => {
   const checked = items.filter((i) => onCurrent(i) && i.checked);
   if (!checked.length) return;
-  if (!confirm(`Ta bort ${checked.length} avbockade varor från listan?`)) return;
-  const batch = writeBatch(db);
-  for (const it of checked) {
-    batch.delete(doc(itemsCol, it.id));
-    if (it.recurringId) scheduleNext(batch, it.recurringId);
-  }
-  await batch.commit();
+  await removeItems(checked, `${checked.length} ${checked.length === 1 ? "vara" : "varor"} rensades`);
 };
 
 function renderRecurring() {
