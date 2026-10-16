@@ -978,25 +978,47 @@ function showRecipe(id, data) {
       a.textContent = "🔗 Öppna på " + hostOf(r.url);
       meta.append(a);
     }
-    if (r.servings) meta.append(`${r.url ? " · " : ""}${r.servings} portioner`);
+    if (r.servings) meta.append(`${r.url ? " · " : ""}receptet är för ${r.servings} portioner`);
     body.append(meta);
+
+    // Portionsväljare: ingredienserna räknas om direkt.
+    const base = r.servings || 4;
+    let portions = 4;
+    const stepper = document.createElement("div");
+    stepper.className = "stepper";
+    const count = document.createElement("b");
+    const minus = button("−", () => { portions = Math.max(1, portions - 1); renderIngredients(); }, "");
+    const plus = button("+", () => { portions += 1; renderIngredients(); }, "");
+    const unit = document.createElement("span");
+    unit.className = "muted";
+    unit.textContent = "portioner";
+    stepper.append(minus, count, plus, unit);
 
     const actions = document.createElement("div");
     actions.className = "actions";
-    actions.append(button("🍽️ Lägg i veckomenyn", () => planRecipe(r)));
-    body.append(actions);
+    actions.append(button("🍽️ Lägg i veckomenyn", () => planRecipe(r, portions)));
 
     const h = document.createElement("div");
     h.className = "label";
     h.textContent = "Ingredienser";
     const ul = document.createElement("ul");
     ul.className = "ing";
-    for (const i of r.ingredients || []) {
-      const li = document.createElement("li");
-      li.textContent = i;
-      ul.append(li);
+    function renderIngredients() {
+      count.textContent = portions;
+      ul.innerHTML = "";
+      for (const line of r.ingredients || []) {
+        const li = document.createElement("li");
+        if (portions === base) {
+          li.textContent = line;
+        } else {
+          const sc = scaleIngredient(line, portions / base);
+          li.textContent = sc.qty ? `${sc.qty} ${sc.name.toLocaleLowerCase("sv")}` : line;
+        }
+        ul.append(li);
+      }
     }
-    body.append(h, ul);
+    renderIngredients();
+    body.append(stepper, actions, h, ul);
 
     if (r.instructions?.length) {
       const d = document.createElement("details");
@@ -1004,7 +1026,7 @@ function showRecipe(id, data) {
       sum.textContent = "Gör så här";
       const ol = document.createElement("ol");
       ol.className = "steps";
-      for (const step of r.instructions) {
+      for (const step of tidySteps(r.instructions)) {
         const li = document.createElement("li");
         li.textContent = step;
         ol.append(li);
@@ -1027,11 +1049,27 @@ function showRecipe(id, data) {
   });
 }
 
+// Instruktioner från bloggar kan vara avbrutna mitt i meningar. Raderna fogas ihop och delas upp i korta steg.
+function tidySteps(lines) {
+  const text = lines.join("\n").replace(/([^.!?:])\n+(?=[a-zåäöé0-9(])/g, "$1 ");
+  const steps = [];
+  for (const para of text.split(/\n+/)) {
+    const sentences = para.replace(/^\s*(steg\s*)?\d+[.)]\s*/i, "").split(/(?<=[.!?])\s+(?=[A-ZÅÄÖ0-9])/);
+    let cur = "";
+    for (const sen of sentences) {
+      if (cur && (cur + " " + sen).length > 140) { steps.push(cur); cur = sen; }
+      else cur = cur ? `${cur} ${sen}` : sen;
+    }
+    if (cur.trim()) steps.push(cur.trim());
+  }
+  return steps;
+}
+
 // "Lägg i veckomenyn": välj dag och måltid, antal portioner, och bocka ur det ni redan har hemma.
-function planRecipe(r) {
+function planRecipe(r, portions = 4) {
   const today = (new Date().getDay() + 6) % 7;
   const thisWeek = mondayOf(new Date());
-  const state = { week: 0, day: today, meal: "dinner", portions: 4, listId: MAIN_LIST, unchecked: new Set() };
+  const state = { week: 0, day: today, meal: "dinner", portions, listId: MAIN_LIST, unchecked: new Set() };
   const base = r.servings || 4;
   // Basvaror är urbockade från början.
   (r.ingredients || []).forEach((line, i) => { if (isBasic(scaleIngredient(line, 1).name, basics)) state.unchecked.add(i); });
