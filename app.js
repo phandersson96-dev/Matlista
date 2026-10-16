@@ -525,10 +525,51 @@ function itemMenu(it) {
       const qty = prompt(`Antal för ${it.name}:`, it.qty || "");
       if (qty !== null) await updateDoc(doc(itemsCol, it.id), { qty: qty.trim() });
     }));
+    const rec = recurring.find((r) => r.id === it.recurringId);
+    body.append(option(rec ? `Ändra hur ofta (${intervalText(rec.intervalDays).toLowerCase()})` : "Gör återkommande", () => repeatMenu(it)));
     body.append(option("Ta bort varan", () => {
       if (confirm(`Ta bort ${it.name}?`)) removeItem(it);
     }, "danger"));
   });
+}
+
+// Ändra hur ofta en vara kommer tillbaka, eller gör en vanlig vara återkommande.
+function repeatMenu(it) {
+  const rec = recurring.find((r) => r.id === it.recurringId);
+  openSheet(`Hur ofta behövs ${it.name}?`, (body) => {
+    const choose = (n) => setRepeat(it, rec, n);
+    for (const n of [7, 14, 28]) {
+      body.append(option(intervalText(n) + (rec?.intervalDays === n ? " ✓" : ""), () => choose(n)));
+    }
+    const custom = rec && ![7, 14, 28].includes(rec.intervalDays);
+    body.append(option(custom ? `${intervalText(rec.intervalDays)} ✓` : "Var X:e dag…", () => {
+      const n = parseInt(prompt("Hur många dagar mellan gångerna?", rec?.intervalDays || 10), 10);
+      if (n > 0) choose(n);
+    }));
+    if (rec) body.append(option("Sluta upprepa", () => choose(0), "danger"));
+  });
+}
+
+async function setRepeat(it, rec, days) {
+  const batch = writeBatch(db);
+  if (rec && days > 0) {
+    const patch = { intervalDays: days };
+    if (rec.nextDue) patch.nextDue = Timestamp.fromMillis(rec.nextDue.toMillis() + (days - rec.intervalDays) * DAY);
+    batch.update(doc(recurringCol, rec.id), patch);
+  } else if (rec) {
+    // Varan får ligga kvar på listan men räknas inte längre som återkommande.
+    batch.delete(doc(recurringCol, rec.id));
+    for (const i of items.filter((x) => x.recurringId === rec.id)) batch.update(doc(itemsCol, i.id), { recurringId: null });
+  } else if (days > 0) {
+    const ref = doc(recurringCol);
+    batch.set(ref, {
+      name: it.name, qty: it.qty || "", intervalDays: days, listId: listOf(it),
+      onList: true, nextDue: null, addedBy: it.addedBy || myInitial(), createdAt: serverTimestamp(),
+    });
+    batch.update(doc(itemsCol, it.id), { recurringId: ref.id });
+  }
+  await batch.commit();
+  showUndo(days > 0 ? `${it.name}: ${intervalText(days).toLowerCase()}` : `${it.name} upprepas inte längre`, null);
 }
 
 async function moveItem(it, listId) {
