@@ -44,6 +44,8 @@ const local = {
 };
 let currentList = local.get("list", MAIN_LIST);
 let sortMode = local.get("sort", "recent");
+// Handla-läge: bara då går det att bocka av, så att inget bockas av av misstag.
+let shopping = local.get("shopping", "0") === "1";
 
 const listOf = (x) => x.listId || MAIN_LIST;
 const onCurrent = (x) => listOf(x) === currentList;
@@ -374,6 +376,18 @@ function scheduleNext(batch, recurringId) {
 
 function addedAt(x) { return x.createdAt ? x.createdAt.toMillis() : Date.now(); }
 
+function setShopping(on) {
+  shopping = on;
+  local.set("shopping", on ? "1" : "0");
+  document.body.classList.toggle("shopping", on);
+  hideSuggestions();
+  renderItems();
+  window.scrollTo(0, 0);
+}
+$("shopStart").onclick = () => setShopping(true);
+$("shopEnd").onclick = () => setShopping(false);
+document.body.classList.toggle("shopping", shopping);
+
 function renderSort() {
   $("sortToggle").textContent = sortMode === "alpha" ? "⇅ A–Ö" : "⇅ Senaste";
 }
@@ -400,6 +414,7 @@ function renderItems() {
     const cb = document.createElement("input");
     cb.type = "checkbox";
     cb.checked = !!it.checked;
+    cb.disabled = !shopping;
     cb.onchange = () => updateDoc(doc(itemsCol, it.id), { checked: cb.checked });
     const text = document.createElement("span");
     text.className = "text";
@@ -415,7 +430,7 @@ function renderItems() {
       label.append(who);
     }
     const more = document.createElement("button");
-    more.className = "icon";
+    more.className = "icon more";
     more.textContent = "⋯";
     more.setAttribute("aria-label", `Mer för ${it.name}`);
     more.onclick = () => itemMenu(it);

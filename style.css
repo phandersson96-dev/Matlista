@@ -153,3 +153,24 @@ dialog h2 { margin: 0 0 12px; font-size: 18px; }
 #undo[hidden] { display: none; }
 #undoBtn { background: none; border: 0; color: #81c784; font-weight: 700; padding: 8px 10px; }
 main { padding-bottom: 80px; }
+
+/* ---------- Handla-läge ---------- */
+button.shop { margin: 16px 0 0; font-size: 18px; font-weight: 600; }
+button.chip.wide { width: 100%; padding: 12px; margin: 0 0 16px; border-radius: 10px; font-size: 16px; }
+#shopBanner, #shopBar { display: none; }
+body.shopping #shopBanner {
+  display: block; margin: 0 0 4px; padding: 10px 14px;
+  background: var(--green); color: #fff; border-radius: 10px;
+}
+@media (prefers-color-scheme: dark) { body.shopping #shopBanner { color: #0d1a0e; } }
+body.shopping #shopBar { display: block; }
+body.shopping #addForm,
+body.shopping #shopStart,
+body.shopping #recurringBox,
+body.shopping #listMenu,
+body.shopping #newList,
+body.shopping .more { display: none; }
+body.shopping #items li { padding: 10px 14px; }
+body.shopping #items li label { cursor: pointer; }
+/* Utanför Handla-läget syns ingen ruta att bocka i; avbockade varor är fortfarande överstrukna. */
+body:not(.shopping) #items input[type=checkbox] { display: none; }

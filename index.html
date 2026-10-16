@@ -8,7 +8,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="style.css?v=4">
+  <link rel="stylesheet" href="style.css?v=5">
 </head>
 <body>
   <header>
@@ -59,10 +59,16 @@
         </div>
       </form>
 
+      <button id="shopStart" class="primary wide shop">🛒 Handla</button>
+      <p id="shopBanner">🛒 <b>Handlar</b> · tryck på en vara för att bocka av den</p>
+
       <ul id="items"></ul>
       <p id="empty" class="muted center" hidden>Listan är tom 🎉</p>
 
-      <button id="done" class="primary wide" hidden>Klar med beställningen</button>
+      <div id="shopBar">
+        <button id="done" class="primary wide" hidden>Klar med beställningen</button>
+        <button id="shopEnd" class="chip wide">Avsluta handla</button>
+      </div>
 
       <details id="recurringBox">
         <summary>Återkommande varor (<span id="recCount">0</span>)</summary>
@@ -83,6 +89,6 @@
     <button id="sheetClose" class="link">Avbryt</button>
   </dialog>
 
-  <script type="module" src="app.js?v=4"></script>
+  <script type="module" src="app.js?v=5"></script>
 </body>
 </html>
