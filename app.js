@@ -408,12 +408,7 @@ function renderItems() {
     more.textContent = "⋯";
     more.setAttribute("aria-label", `Mer för ${it.name}`);
     more.onclick = () => itemMenu(it);
-    const del = document.createElement("button");
-    del.className = "icon";
-    del.textContent = "✕";
-    del.setAttribute("aria-label", `Ta bort ${it.name}`);
-    del.onclick = () => removeItem(it);
-    li.append(label, more, del);
+    li.append(label, more);
     list.append(li);
   }
   show("empty", mine.length === 0);
@@ -446,7 +441,9 @@ function itemMenu(it) {
       const qty = prompt(`Antal för ${it.name}:`, it.qty || "");
       if (qty !== null) await updateDoc(doc(itemsCol, it.id), { qty: qty.trim() });
     }));
-    body.append(option("Ta bort", () => removeItem(it), "danger"));
+    body.append(option("Ta bort varan", () => {
+      if (confirm(`Ta bort ${it.name}?`)) removeItem(it);
+    }, "danger"));
   });
 }
 
