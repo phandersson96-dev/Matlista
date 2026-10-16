@@ -9,7 +9,7 @@ import {
   runTransaction, writeBatch, serverTimestamp, Timestamp, increment,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { firebaseConfig, recipeImportUrl } from "./config.js";
-import { scaleIngredient, isBasic, DEFAULT_BASICS, mergeQty, itemKey } from "./ingredients.js?v=13";
+import { scaleIngredient, isBasic, DEFAULT_BASICS, mergeQty, itemKey } from "./ingredients.js?v=14";
 
 const DAY = 24 * 60 * 60 * 1000;
 // Standardlistan. Varor från innan det fanns flera listor saknar listId och hör hit.
@@ -708,6 +708,157 @@ let editing = null;
 $("weekPrev").onclick = () => { weekStart = addDays(weekStart, -7); renderMenu(); };
 $("weekNext").onclick = () => { weekStart = addDays(weekStart, 7); renderMenu(); };
 $("weekToday").onclick = () => { weekStart = mondayOf(new Date()); renderMenu(); };
+$("copyWeek").onclick = () => chooseWeekToCopy();
+
+const MEAL_KEYS = DAYS.flatMap((_, i) => MEALS.map(([m]) => `d${i}_${m}`));
+const weekHasFood = (w) => MEAL_KEYS.some((k) => (w?.[k] || "").trim());
+// Veckans id "2026-W38" tillbaka till måndagens datum.
+function mondayFromId(id) {
+  const [y, w] = id.split("-W").map(Number);
+  return addDays(mondayOf(new Date(y, 0, 4)), (w - 1) * 7);
+}
+
+function chooseWeekToCopy() {
+  const target = weekId(weekStart);
+  const weeks = Object.keys(menus).filter((id) => id !== target && weekHasFood(menus[id])).sort().reverse();
+  openSheet(`Kopiera till vecka ${isoWeek(weekStart).week}`, (body) => {
+    if (!weeks.length) {
+      const p = document.createElement("p");
+      p.className = "muted";
+      p.textContent = "Det finns inga andra veckor med mat att kopiera än.";
+      body.append(p);
+      return;
+    }
+    const p = document.createElement("p");
+    p.className = "muted small";
+    p.textContent = "Välj veckan du vill kopiera. Rätter från recepten lägger sina varor på inköpslistan.";
+    body.append(p);
+    for (const id of weeks) {
+      const dishes = MEAL_KEYS.map((k) => (menus[id][k] || "").split("\n")[0].trim()).filter(Boolean);
+      const monday = mondayFromId(id);
+      const fmt = (d) => d.toLocaleDateString("sv-SE", { day: "numeric", month: "short" });
+      body.append(option(`Vecka ${isoWeek(monday).week} (${fmt(monday)}–${fmt(addDays(monday, 6))}): ${dishes.slice(0, 4).join(", ")}${dishes.length > 4 ? " …" : ""}`, () => copyWeek(id)));
+    }
+  });
+}
+
+// Vilka recept som ligger i en måltid: sparade kopplingar, annars recept vars länk står i texten (äldre veckor).
+function recipesInMeal(week, key) {
+  const text = week[key] || "";
+  const found = (week[`${key}_recipes`] || [])
+    .map((ref) => ({ recipe: recipes.find((r) => r.id === ref.id), portions: ref.portions || 4 }))
+    .filter((x) => x.recipe && text.includes(x.recipe.title));
+  for (const r of recipes) {
+    if (r.url && text.includes(r.url) && !found.some((x) => x.recipe.id === r.id)) {
+      const m = text.match(new RegExp(`${r.title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\((\\d+) port\\)`));
+      found.push({ recipe: r, portions: m ? parseInt(m[1], 10) : r.servings || 4 });
+    }
+  }
+  return found;
+}
+
+function copyWeek(srcId) {
+  const src = menus[srcId];
+  const targetMonday = weekStart;
+  const targetId = weekId(targetMonday);
+  if (weekHasFood(menus[targetId]) && !confirm(`Vecka ${isoWeek(targetMonday).week} har redan rätter. Vill du ersätta dem?`)) return;
+
+  // En post per rätt från ett recept, med egna portioner och egna urbockade varor.
+  const meals = [];
+  DAYS.forEach((dayName, i) => MEALS.forEach(([m, label]) => {
+    for (const x of recipesInMeal(src, `d${i}_${m}`)) {
+      const unchecked = new Set();
+      (x.recipe.ingredients || []).forEach((line, j) => { if (isBasic(scaleIngredient(line, 1).name, basics)) unchecked.add(j); });
+      meals.push({ ...x, where: `${dayName} ${label.toLowerCase()}`, unchecked });
+    }
+  }));
+
+  const commit = async (listId) => {
+    const batch = writeBatch(db);
+    const data = { updatedAt: serverTimestamp() };
+    for (const k of MEAL_KEYS) {
+      data[k] = src[k] || "";
+      data[`${k}_recipes`] = src[`${k}_recipes`] || [];
+    }
+    batch.set(doc(menusCol, targetId), data);
+    const entries = [];
+    for (const meal of meals) {
+      const factor = meal.portions / (meal.recipe.servings || 4);
+      (meal.recipe.ingredients || []).forEach((line, j) => {
+        if (!meal.unchecked.has(j)) entries.push({ ...scaleIngredient(line, factor), recipe: meal.recipe.title });
+      });
+    }
+    queueItems(batch, entries, listId);
+    for (const id of new Set(meals.map((m) => m.recipe.id))) {
+      batch.update(doc(recipesCol, id), { timesPlanned: increment(1), lastPlanned: serverTimestamp() });
+    }
+    await batch.commit();
+    entries.forEach((e) => remember(e.name, e.qty));
+    renderMenu();
+    showUndo(`Vecka ${isoWeek(mondayFromId(srcId)).week} kopierad${entries.length ? `, ${entries.length} varor på listan` : ""}`, null);
+  };
+
+  if (!meals.length) { commit(MAIN_LIST); return; }
+
+  openSheet(`Kopiera vecka ${isoWeek(mondayFromId(srcId)).week} till vecka ${isoWeek(targetMonday).week}`, (body) => {
+    const p = document.createElement("p");
+    p.className = "muted small";
+    p.textContent = "Välj portioner och bocka ur det ni redan har hemma. Basvarorna är redan urbockade.";
+    body.append(p);
+    let listId = MAIN_LIST;
+    const listSel = document.createElement("select");
+    for (const l of sortedLists()) listSel.add(new Option(l.name, l.id));
+    listSel.onchange = () => { listId = listSel.value; };
+    body.append(field("Inköpslista", listSel));
+    const go = button("", async () => { $("sheet").close(); await commit(listId); });
+    const updateButton = () => {
+      const n = meals.reduce((sum, m) => sum + (m.recipe.ingredients || []).length - m.unchecked.size, 0);
+      go.textContent = n ? `Kopiera veckan och lägg ${n} varor på listan` : "Kopiera bara veckan";
+    };
+    for (const meal of meals) {
+      const h = document.createElement("div");
+      h.className = "label";
+      h.textContent = `${meal.where}: ${meal.recipe.title}`;
+      const stepper = document.createElement("div");
+      stepper.className = "stepper";
+      const count = document.createElement("b");
+      const list = document.createElement("div");
+      list.className = "checklist";
+      const render = () => {
+        count.textContent = meal.portions;
+        list.innerHTML = "";
+        (meal.recipe.ingredients || []).forEach((line, j) => {
+          const sc = scaleIngredient(line, meal.portions / (meal.recipe.servings || 4));
+          const label = document.createElement("label");
+          const cb = document.createElement("input");
+          cb.type = "checkbox";
+          cb.checked = !meal.unchecked.has(j);
+          cb.onchange = () => { cb.checked ? meal.unchecked.delete(j) : meal.unchecked.add(j); updateButton(); };
+          const name = document.createElement("span");
+          name.textContent = sc.name;
+          const q = document.createElement("span");
+          q.className = "q";
+          q.textContent = sc.qty;
+          label.append(cb, name, q);
+          list.append(label);
+        });
+      };
+      const minus = button("−", () => { meal.portions = Math.max(1, meal.portions - 1); render(); }, "");
+      const plus = button("+", () => { meal.portions += 1; render(); }, "");
+      const unit = document.createElement("span");
+      unit.className = "muted";
+      unit.textContent = "portioner";
+      stepper.append(minus, count, plus, unit);
+      body.append(h, stepper, list);
+      render();
+    }
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    actions.append(go);
+    body.append(actions);
+    updateButton();
+  });
+}
 
 function renderMenu() {
   if (tab !== "menu" || editing) return;
@@ -799,7 +950,10 @@ function renderRecipes() {
   const list = $("recipes");
   list.innerHTML = "";
   const q = normalize($("recipeSearch").value || "");
+  document.querySelectorAll("#recipeFilters button").forEach((b) => b.classList.toggle("on", b.dataset.f === recipeFilter));
   const found = recipes
+    .filter((r) => recipeFilter !== "fav" || r.favorite)
+    .filter((r) => recipeFilter !== "quick" || (r.minutes && r.minutes <= QUICK_MINUTES))
     .filter((r) => !q || normalize(r.title || "").includes(q) || (r.ingredients || []).some((i) => normalize(i).includes(q)))
     .sort((a, b) => (b.createdAt?.toMillis?.() || Date.now()) - (a.createdAt?.toMillis?.() || Date.now()));
   for (const r of found) {
@@ -818,10 +972,14 @@ function renderRecipes() {
     text.className = "text";
     const title = document.createElement("span");
     title.className = "title";
-    title.textContent = r.title || "Namnlöst recept";
+    title.textContent = (r.favorite ? "⭐ " : "") + (r.title || "Namnlöst recept");
     const meta = document.createElement("span");
     meta.className = "meta";
-    meta.textContent = [hostOf(r.url), r.timesPlanned ? `lagad ${r.timesPlanned} ggr` : ""].filter(Boolean).join(" · ") || "eget recept";
+    meta.textContent = [
+      r.minutes ? `⏱ ${r.minutes} min` : "",
+      r.lastPlanned ? `lagad ${ago(r.lastPlanned.toMillis())}` : "",
+      hostOf(r.url),
+    ].filter(Boolean).join(" · ") || "eget recept";
     text.append(title, meta);
     li.append(text);
     li.onclick = () => showRecipe(r.id);
@@ -836,6 +994,21 @@ function noImage() {
   return d;
 }
 $("recipeSearch").oninput = renderRecipes;
+
+const QUICK_MINUTES = 30;
+let recipeFilter = "all";
+document.querySelectorAll("#recipeFilters button").forEach((b) => {
+  b.onclick = () => { recipeFilter = b.dataset.f; renderRecipes(); };
+});
+
+function ago(ms) {
+  const days = Math.floor((Date.now() - ms) / DAY);
+  if (days <= 0) return "idag";
+  if (days === 1) return "igår";
+  if (days < 14) return `för ${days} dagar sedan`;
+  if (days < 60) return `för ${Math.round(days / 7)} veckor sedan`;
+  return `för ${Math.round(days / 30)} månader sedan`;
+}
 
 // Hämtar receptet via importtjänsten i Cloudflare. Går det inte öppnas ett formulär för att skriva in det själv.
 $("importForm").onsubmit = (e) => {
@@ -862,7 +1035,7 @@ async function importRecipe(url) {
     const recipe = {
       title: data.title || hostOf(url), url: data.url || url, image: data.image || "",
       servings: data.servings || null, ingredients: data.ingredients, instructions: data.instructions || [],
-      addedBy: myInitial(),
+      minutes: data.minutes || null, addedBy: myInitial(),
     };
     // Hittades receptet i vanlig text får ni granska det innan det sparas.
     if (data.fromText) {
@@ -925,9 +1098,10 @@ function editRecipe(r) {
     const title = input(r.title, { placeholder: "T.ex. Kycklinggratäng" });
     const url = input(r.url, { type: "url", placeholder: "https://…" });
     const servings = input(r.servings || "", { type: "number", min: 1, placeholder: "4" });
+    const minutes = input(r.minutes || "", { type: "number", min: 1, placeholder: "T.ex. 30" });
     const ings = input((r.ingredients || []).join("\n"), { multiline: true, placeholder: "En ingrediens per rad, t.ex.\n2 dl matlagningsgrädde\n600 g kycklingfilé" });
     const steps = input((r.instructions || []).join("\n"), { multiline: true, placeholder: "Gör så här (valfritt)" });
-    body.append(field("Namn", title), field("Länk", url), field("Portioner i receptet", servings),
+    body.append(field("Namn", title), field("Länk", url), field("Portioner i receptet", servings), field("Tillagningstid (minuter)", minutes),
       field("Ingredienser", ings), field("Instruktioner", steps));
     const actions = document.createElement("div");
     actions.className = "actions";
@@ -936,6 +1110,7 @@ function editRecipe(r) {
         title: title.value.trim() || hostOf(url.value) || "Namnlöst recept",
         url: url.value.trim(),
         servings: parseInt(servings.value, 10) || null,
+        minutes: parseInt(minutes.value, 10) || null,
         ingredients: ings.value.split("\n").map((x) => x.trim()).filter(Boolean),
         instructions: steps.value.split("\n").map((x) => x.trim()).filter(Boolean),
       };
@@ -978,7 +1153,12 @@ function showRecipe(id, data) {
       a.textContent = "🔗 Öppna på " + hostOf(r.url);
       meta.append(a);
     }
-    if (r.servings) meta.append(`${r.url ? " · " : ""}receptet är för ${r.servings} portioner`);
+    const extra = [
+      r.servings ? `receptet är för ${r.servings} portioner` : "",
+      r.minutes ? `⏱ ${r.minutes} min` : "",
+      r.lastPlanned ? `lagad ${ago(r.lastPlanned.toMillis())}` : "",
+    ].filter(Boolean).join(" · ");
+    if (extra) meta.append(`${r.url ? " · " : ""}${extra}`);
     body.append(meta);
 
     // Portionsväljare: ingredienserna räknas om direkt.
@@ -997,6 +1177,12 @@ function showRecipe(id, data) {
     const actions = document.createElement("div");
     actions.className = "actions";
     actions.append(button("🍽️ Lägg i veckomenyn", () => planRecipe(r, portions)));
+    const fav = button(r.favorite ? "⭐ Favorit" : "☆ Gör till favorit", async () => {
+      r.favorite = !r.favorite;
+      fav.textContent = r.favorite ? "⭐ Favorit" : "☆ Gör till favorit";
+      await updateDoc(doc(recipesCol, r.id), { favorite: r.favorite });
+    }, "option");
+    actions.append(fav);
 
     const h = document.createElement("div");
     h.className = "label";
@@ -1018,7 +1204,17 @@ function showRecipe(id, data) {
       }
     }
     renderIngredients();
-    body.append(stepper, actions, h, ul);
+
+    // Egen anteckning, t.ex. "mindre chili". Sparas när man lämnar rutan och följer med in i veckomenyn.
+    const note = input(r.note || "", { multiline: true, placeholder: "T.ex. mindre chili, dubbla såsen" });
+    note.className = "note";
+    note.onblur = async () => {
+      const value = note.value.trim();
+      if (value === (r.note || "")) return;
+      r.note = value;
+      await updateDoc(doc(recipesCol, r.id), { note: value });
+    };
+    body.append(stepper, actions, field("📝 Egen anteckning", note), h, ul);
 
     if (r.instructions?.length) {
       const d = document.createElement("details");
@@ -1164,44 +1360,63 @@ function seg(options, get, set) {
   return wrap;
 }
 
-async function addPlannedRecipe(r, state, base, monday) {
-  const factor = state.portions / base;
-  const batch = writeBatch(db);
-  const added = [];
-  // Finns varan redan oavbockad på listan läggs mängderna ihop i stället för en ny rad.
+// Lägger varor på listan. Finns varan redan oavbockad läggs mängderna ihop i stället för en ny rad.
+// entries: [{ name, qty, recipe }]
+function queueItems(batch, entries, listId) {
   const rows = new Map();
   for (const it of items) {
-    if (listOf(it) === state.listId && !it.checked) rows.set(itemKey(it.name), { ref: doc(itemsCol, it.id), data: { ...it }, isNew: false });
+    if (listOf(it) === listId && !it.checked) rows.set(itemKey(it.name), { ref: doc(itemsCol, it.id), data: { ...it }, isNew: false });
   }
-  (r.ingredients || []).forEach((line, i) => {
-    if (state.unchecked.has(i)) return;
-    const s = scaleIngredient(line, factor);
-    added.push(s);
-    const row = rows.get(itemKey(s.name));
+  for (const e of entries) {
+    const row = rows.get(itemKey(e.name));
     if (row) {
-      row.data.qty = mergeQty(row.data.qty, s.qty);
+      row.data.qty = mergeQty(row.data.qty, e.qty);
       const from = (row.data.fromRecipe || "").split(", ").filter(Boolean);
-      if (!from.includes(r.title)) from.push(r.title);
+      if (e.recipe && !from.includes(e.recipe)) from.push(e.recipe);
       row.data.fromRecipe = from.join(", ");
       row.changed = true;
     } else {
-      rows.set(itemKey(s.name), {
+      rows.set(itemKey(e.name), {
         ref: doc(itemsCol), isNew: true, changed: true,
-        data: { name: s.name, qty: s.qty, listId: state.listId, checked: false, recurringId: null, fromRecipe: r.title, addedBy: myInitial() },
+        data: { name: e.name, qty: e.qty, listId, checked: false, recurringId: null, fromRecipe: e.recipe || "", addedBy: myInitial() },
       });
     }
-  });
+  }
   for (const row of rows.values()) {
     if (!row.changed) continue;
     if (row.isNew) batch.set(row.ref, { ...row.data, createdAt: serverTimestamp() });
     else batch.update(row.ref, { qty: row.data.qty, fromRecipe: row.data.fromRecipe });
   }
-  // Rätten skrivs in i veckomenyn, under det som redan står där.
+}
+
+// Texten som skrivs in i veckomenyn för ett recept.
+function menuEntry(r, portions) {
+  const base = r.servings || 4;
+  return [r.title + (portions !== base ? ` (${portions} port)` : ""), r.note ? `📝 ${r.note}` : "", r.url].filter(Boolean).join("\n");
+}
+
+async function addPlannedRecipe(r, state, base, monday) {
+  const factor = state.portions / base;
+  const batch = writeBatch(db);
+  const added = [];
+  (r.ingredients || []).forEach((line, i) => {
+    if (state.unchecked.has(i)) return;
+    const s = scaleIngredient(line, factor);
+    added.push({ ...s, recipe: r.title });
+  });
+  queueItems(batch, added, state.listId);
+  // Rätten skrivs in i veckomenyn, under det som redan står där. Vilka recept som ligger där
+  // sparas också, så att veckan kan kopieras med varorna senare.
   const id = weekId(monday);
   const key = `d${state.day}_${state.meal}`;
-  const existing = (menus[id] || {})[key] || "";
-  const entry = [r.title + (state.portions !== base ? ` (${state.portions} port)` : ""), r.url].filter(Boolean).join("\n");
-  batch.set(doc(menusCol, id), { [key]: existing ? `${existing}\n${entry}` : entry, updatedAt: serverTimestamp() }, { merge: true });
+  const week = menus[id] || {};
+  const existing = week[key] || "";
+  const entry = menuEntry(r, state.portions);
+  batch.set(doc(menusCol, id), {
+    [key]: existing ? `${existing}\n${entry}` : entry,
+    [`${key}_recipes`]: [...(week[`${key}_recipes`] || []), { id: r.id, portions: state.portions }],
+    updatedAt: serverTimestamp(),
+  }, { merge: true });
   batch.update(doc(recipesCol, r.id), { timesPlanned: increment(1), lastPlanned: serverTimestamp() });
   await batch.commit();
   added.forEach((s) => remember(s.name, s.qty));

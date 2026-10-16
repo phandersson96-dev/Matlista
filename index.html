@@ -8,7 +8,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="style.css?v=13">
+  <link rel="stylesheet" href="style.css?v=14">
 </head>
 <body>
   <header>
@@ -41,7 +41,12 @@
         <button id="newRecipe" class="chip">+ Skriv in eget</button>
         <button id="editBasics" class="chip">Basvaror</button>
       </div>
-      <input id="recipeSearch" type="search" placeholder="Sök bland recepten" autocomplete="off">
+      <input id="recipeSearch" type="search" placeholder="Sök på namn eller ingrediens, t.ex. kyckling" autocomplete="off">
+      <div id="recipeFilters" class="seg">
+        <button data-f="all">Alla</button>
+        <button data-f="fav">⭐ Favoriter</button>
+        <button data-f="quick">⚡ Max 30 min</button>
+      </div>
       <ul id="recipes"></ul>
       <p id="noRecipes" class="muted center small" hidden>Inga recept än. Klistra in en länk från t.ex. ICA, Köket eller Tasteline, eller dela receptet till Matlista direkt från webbläsaren.</p>
      </div>
@@ -105,6 +110,7 @@
         <button id="weekNext" class="icon big" aria-label="Nästa vecka">›</button>
       </div>
       <button id="weekToday" class="chip" hidden>Till denna vecka</button>
+      <button id="copyWeek" class="chip">📋 Kopiera en tidigare vecka hit</button>
       <div id="days"></div>
      </div>
 
@@ -127,6 +133,6 @@
     <button id="sheetClose" class="link">Avbryt</button>
   </dialog>
 
-  <script type="module" src="app.js?v=13"></script>
+  <script type="module" src="app.js?v=14"></script>
 </body>
 </html>

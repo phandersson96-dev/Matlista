@@ -99,7 +99,14 @@ function normalizeRecipe(r) {
     ingredients: [].concat(r.recipeIngredient || r.ingredients || []).map(clean).filter(Boolean),
     instructions: flattenInstructions(r.recipeInstructions).map(clean).filter(Boolean),
     image: imageUrl(r.image),
+    minutes: isoMinutes(r.totalTime) || (isoMinutes(r.prepTime) + isoMinutes(r.cookTime)) || null,
   };
+}
+
+// "PT1H30M" blir 90.
+function isoMinutes(d) {
+  const m = String(d || "").match(/P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?/);
+  return m ? (+m[1] || 0) * 1440 + (+m[2] || 0) * 60 + (+m[3] || 0) : 0;
 }
 
 function parseYield(y) {
