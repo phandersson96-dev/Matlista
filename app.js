@@ -823,6 +823,12 @@ async function importRecipe(url) {
       servings: data.servings || null, ingredients: data.ingredients, instructions: data.instructions || [],
       addedBy: myInitial(),
     };
+    // Hittades receptet i vanlig text får ni granska det innan det sparas.
+    if (data.fromText) {
+      msg("Receptet låg som vanlig text på sidan. Kolla att ingredienserna blev rätt och tryck Spara.");
+      editRecipe(recipe);
+      return;
+    }
     const ref = await addDoc(recipesCol, { ...recipe, createdAt: serverTimestamp() });
     $("importUrl").value = "";
     msg("");
