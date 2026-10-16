@@ -11,6 +11,9 @@ const FIREBASE_PROJECT = "matlista-fd0d5";
 const MAX_BYTES = 3_000_000;
 const SEND_HOUR = 18;
 
+// Lagringen får heta MATLISTA eller MATLISTAN i Cloudflare.
+const storage = (env) => env.MATLISTA || env.MATLISTAN;
+
 export default {
   async fetch(request, env) {
     const origin = request.headers.get("Origin") || "";
@@ -68,7 +71,7 @@ export default {
 
   // Körs varje timme av Cron Trigger. Skickar bara när klockan är 18 i Sverige.
   async scheduled(event, env, ctx) {
-    if (!env.MATLISTA) return;
+    if (!storage(env)) return;
     const { date, hour } = stockholmNow(new Date(event.scheduledTime || Date.now()));
     if (hour !== SEND_HOUR) return;
     ctx.waitUntil(sendDue(env, date));
@@ -78,8 +81,8 @@ export default {
 // ---------- Påminnelser ----------
 
 async function handlePush(request, env, path, reply) {
-  if (!env.MATLISTA) return reply(503, { error: "no-storage" });
-  const kv = env.MATLISTA;
+  const kv = storage(env);
+  if (!kv) return reply(503, { error: "no-storage" });
   const vapid = await vapidKeys(kv);
   if (path === "/push/key") return reply(200, { publicKey: vapid.publicKey });
   if (request.method !== "POST") return reply(405, { error: "method" });
@@ -143,7 +146,7 @@ export function stockholmNow(d) {
 }
 
 async function sendDue(env, date) {
-  const kv = env.MATLISTA;
+  const kv = storage(env);
   if ((await kv.get("sent")) === date) return;
   await kv.put("sent", date);
   const due = ((await kv.get("schedule", "json")) || []).filter((r) => r.date === date);
