@@ -1,10 +1,11 @@
 // Sparar appens filer så att den startar snabbt och även utan nät.
 // Listan själv synkas av Firebase, som har en egen offline-cache.
-const CACHE = "matlista-v3";
-const FILES = ["./", "index.html", "style.css", "app.js", "config.js", "manifest.webmanifest", "icons/icon-192.png"];
+const CACHE = "matlista-v4";
+// index.html laddar style.css och app.js med ?v=N, så en ny version får alltid nya adresser.
+const FILES = ["./", "index.html", "style.css?v=4", "app.js?v=4", "config.js", "manifest.webmanifest", "icons/icon-192.png"];
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)));
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES.map((f) => new Request(f, { cache: "reload" })))));
   self.skipWaiting();
 });
 
@@ -19,7 +20,8 @@ self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET" || url.origin !== location.origin) return;
   e.respondWith(
-    fetch(e.request)
+    // no-cache: fråga alltid servern om filen ändrats, i stället för webbläsarens 10-minuterscache.
+    fetch(e.request, { cache: "no-cache" })
       .then((res) => {
         const copy = res.clone();
         caches.open(CACHE).then((c) => c.put(e.request, copy));

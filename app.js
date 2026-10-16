@@ -597,5 +597,15 @@ $("sheet").onclick = (e) => { if (e.target === $("sheet")) $("sheet").close(); }
 // ---------- Offline / hemskärm ----------
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("sw.js");
+  // När en ny version har installerats laddas sidan om, så att gamla och nya filer aldrig blandas.
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (hadController && !reloaded) { reloaded = true; location.reload(); }
+  });
+  navigator.serviceWorker.register("sw.js").then((reg) => {
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") reg.update();
+    });
+  });
 }
