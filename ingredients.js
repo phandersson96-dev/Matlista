@@ -20,11 +20,25 @@ function toNumber(s) {
   return parseFloat(s);
 }
 
+// Bloggar skriver ofta mängden i ord: "en gul lök", "ett halvt paket".
+const WORD_NUMBERS = {
+  "en halv": "1/2", "ett halvt": "1/2", "halv": "1/2", "halvt": "1/2", "en": "1", "ett": "1", "två": "2", "tre": "3",
+  "fyra": "4", "fem": "5", "sex": "6", "sju": "7", "åtta": "8", "nio": "9", "tio": "10", "ett par": "2",
+};
+const WORD_RE = new RegExp(`^(${Object.keys(WORD_NUMBERS).sort((a, b) => b.length - a.length).join("|")})(?=\\s)`, "i");
+// Mängden sist: "Grädde 2 dl", "Kycklingfilé, ca 600 g".
+const TRAILING_RE = new RegExp(`^(.*?[^\\d\\s,:])[\\s,:]+((?:ca\\.?|cirka)\\s*)?(${NUM})(?:\\s*[-–]\\s*(${NUM}))?\\s*(${UNITS.join("|")})?\\.?$`, "i");
+
 export function parseIngredient(line) {
-  let s = line.trim();
+  let s = line.replace(/^[\s\u200b\u00a0•·*▪◦–-]+/, "").replace(/\u00a0/g, " ").trim();
   for (const [f, r] of Object.entries(FRACTIONS)) s = s.replace(new RegExp(`(\\d)?\\s*${f}`, "g"), (m, d) => (d ? `${d} ${r}` : r));
+  s = s.replace(WORD_RE, (w) => WORD_NUMBERS[w.toLocaleLowerCase("sv")]);
   const q = s.match(QTY_RE);
-  if (!q) return { amount: null, max: null, unit: "", name: s };
+  if (!q) {
+    const t = s.match(TRAILING_RE);
+    if (t) return { amount: toNumber(t[3]), max: t[4] ? toNumber(t[4]) : null, unit: (t[5] || "").toLowerCase(), name: t[1].trim() };
+    return { amount: null, max: null, unit: "", name: s };
+  }
   s = s.slice(q[0].length);
   const u = s.match(UNIT_RE);
   const unit = u ? u[1].toLowerCase() : "";
@@ -49,9 +63,13 @@ export function formatAmount(n, unit) {
 export function scaleIngredient(line, factor) {
   const p = parseIngredient(line);
   if (p.amount == null || !p.name) return { name: capitalize(p.name || line.trim()), qty: "" };
-  let qty = formatAmount(p.amount * factor, p.unit);
-  if (p.max != null) qty += "–" + formatAmount(p.max * factor, p.unit);
-  if (p.unit) qty += " " + p.unit;
+  let unit = p.unit;
+  let n = p.amount * factor, max = p.max != null ? p.max * factor : null;
+  // 1000 g visas som 1 kg.
+  if (WEIGHTS.includes(unit) && n >= 1000) { unit = "kg"; n /= 1000; if (max != null) max /= 1000; }
+  let qty = formatAmount(n, unit);
+  if (max != null) qty += "–" + formatAmount(max, unit);
+  if (unit) qty += " " + unit;
   return { name: capitalize(p.name), qty };
 }
 
