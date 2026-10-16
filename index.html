@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2e7d32">
+  <title>Matlista</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Matlista</h1>
+    <button id="signOut" class="link" hidden>Logga ut</button>
+  </header>
+
+  <main>
+    <section id="login" hidden>
+      <p>Logga in med ditt Google-konto för att se er gemensamma lista.</p>
+      <button id="signIn" class="primary">Logga in med Google</button>
+      <p id="loginError" class="error" hidden></p>
+    </section>
+
+    <section id="denied" hidden>
+      <p>Det här kontot har inte tillgång till listan.</p>
+      <p class="muted" id="deniedEmail"></p>
+    </section>
+
+    <section id="app" hidden>
+      <form id="addForm" autocomplete="off">
+        <div class="row">
+          <input id="name" placeholder="Vad ska handlas?" required enterkeyhint="done">
+          <input id="qty" placeholder="Antal" class="qty" inputmode="text">
+          <button class="primary add" aria-label="Lägg till">+</button>
+        </div>
+        <label class="repeat">
+          Återkommande:
+          <select id="interval">
+            <option value="0">Nej</option>
+            <option value="7">Varje vecka</option>
+            <option value="14">Varannan vecka</option>
+            <option value="28">Var fjärde vecka</option>
+            <option value="custom">Var X:e dag…</option>
+          </select>
+        </label>
+      </form>
+
+      <ul id="items"></ul>
+      <p id="empty" class="muted center" hidden>Listan är tom 🎉</p>
+
+      <button id="done" class="primary wide" hidden>Klar med beställningen</button>
+
+      <details id="recurringBox">
+        <summary>Återkommande varor (<span id="recCount">0</span>)</summary>
+        <ul id="recurring"></ul>
+        <p class="muted small">Varan läggs tillbaka på listan automatiskt när det har gått så många dagar sedan ni senast beställde den.</p>
+      </details>
+    </section>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
