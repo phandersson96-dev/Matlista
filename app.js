@@ -458,7 +458,7 @@ function renderItems() {
     label.append(cb, text);
     if (it.qty) label.append(badge(it.qty));
     if (it.recurringId) label.append(badge("🔁"));
-    if (it.addedBy) {
+    if (it.addedBy && it.addedBy !== myInitial()) {
       const who = document.createElement("span");
       who.className = "who";
       who.textContent = it.addedBy;
@@ -473,6 +473,8 @@ function renderItems() {
     li.append(label, more);
     list.append(li);
   }
+  const left = mine.filter((i) => !i.checked).length;
+  $("listCount").textContent = left ? `${left} ${left === 1 ? "vara" : "varor"} kvar` : "";
   show("empty", mine.length === 0);
   show("done", mine.some((i) => i.checked));
   renderLists();
@@ -1167,7 +1169,7 @@ function linkify(el, text) {
     a.href = url;
     a.target = "_blank";
     a.rel = "noopener";
-    a.textContent = "🔗 " + m[0].replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "");
+    a.textContent = m[0].replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "");
     el.append(a);
     last = m.index + m[0].length;
   }
@@ -1195,20 +1197,26 @@ function renderRecipes() {
       img.src = r.image;
       img.alt = "";
       img.loading = "lazy";
-      img.onerror = () => img.replaceWith(noImage());
+      img.onerror = () => img.replaceWith(noImage(r.title));
       li.append(img);
     } else {
-      li.append(noImage());
+      li.append(noImage(r.title));
     }
     const text = document.createElement("span");
     text.className = "text";
     const title = document.createElement("span");
     title.className = "title";
-    title.textContent = (r.favorite ? "⭐ " : "") + (r.title || "Namnlöst recept");
+    title.textContent = r.title || "Namnlöst recept";
+    if (r.favorite) {
+      const star = document.createElement("span");
+      star.className = "star";
+      star.textContent = " ★";
+      title.append(star);
+    }
     const meta = document.createElement("span");
     meta.className = "meta";
     meta.textContent = [
-      r.minutes ? `⏱ ${r.minutes} min` : "",
+      r.minutes ? `${r.minutes} min` : "",
       r.lastPlanned ? `lagad ${ago(r.lastPlanned.toMillis())}` : "",
       hostOf(r.url),
     ].filter(Boolean).join(" · ") || "eget recept";
@@ -1219,10 +1227,10 @@ function renderRecipes() {
   }
   show("noRecipes", recipes.length === 0);
 }
-function noImage() {
+function noImage(title = "") {
   const d = document.createElement("span");
   d.className = "noimg";
-  d.textContent = "🍲";
+  d.textContent = (title.trim()[0] || "·").toLocaleUpperCase("sv");
   return d;
 }
 $("recipeSearch").oninput = renderRecipes;
@@ -1382,12 +1390,12 @@ function showRecipe(id, data) {
       a.href = r.url;
       a.target = "_blank";
       a.rel = "noopener";
-      a.textContent = "🔗 Öppna på " + hostOf(r.url);
+      a.textContent = "Öppna på " + hostOf(r.url) + " ↗";
       meta.append(a);
     }
     const extra = [
       r.servings ? `receptet är för ${r.servings} portioner` : "",
-      r.minutes ? `⏱ ${r.minutes} min` : "",
+      r.minutes ? `${r.minutes} min` : "",
       r.lastPlanned ? `lagad ${ago(r.lastPlanned.toMillis())}` : "",
     ].filter(Boolean).join(" · ");
     if (extra) meta.append(`${r.url ? " · " : ""}${extra}`);
@@ -1408,10 +1416,10 @@ function showRecipe(id, data) {
 
     const actions = document.createElement("div");
     actions.className = "actions";
-    actions.append(button("🍽️ Lägg i veckomenyn", () => planRecipe(r, portions)));
-    const fav = button(r.favorite ? "⭐ Favorit" : "☆ Gör till favorit", async () => {
+    actions.append(button("Lägg i veckomenyn", () => planRecipe(r, portions)));
+    const fav = button(r.favorite ? "★ Favorit" : "☆ Gör till favorit", async () => {
       r.favorite = !r.favorite;
-      fav.textContent = r.favorite ? "⭐ Favorit" : "☆ Gör till favorit";
+      fav.textContent = r.favorite ? "★ Favorit" : "☆ Gör till favorit";
       await updateDoc(doc(recipesCol, r.id), { favorite: r.favorite });
     }, "option");
     actions.append(fav);
@@ -1446,7 +1454,7 @@ function showRecipe(id, data) {
       r.note = value;
       await updateDoc(doc(recipesCol, r.id), { note: value });
     };
-    body.append(stepper, actions, field("📝 Egen anteckning", note), h, ul);
+    body.append(stepper, actions, field("Egen anteckning", note), h, ul);
 
     if (r.instructions?.length) {
       const d = document.createElement("details");

@@ -263,3 +263,80 @@ dialog { max-height: 88vh; overflow-y: auto; }
 .meal .more { flex: none; align-self: flex-start; padding: 0 6px; margin: -2px -6px 0 0; }
 .meal .remind { font-size: 13px; color: var(--muted); margin-top: 2px; }
 #sheetBody textarea.note { min-height: 60px; }
+
+
+/* ================= Ny design (förslag) ================= */
+:root {
+  --green: #2f6b45; --green-soft: #e7efe8;
+  --bg: #f7f5f0; --card: #fffefb; --text: #1f2620; --muted: #7a776f; --line: #e8e4da;
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --green: #8cc49c; --green-soft: #22302a; --bg: #141613; --card: #1c1f1b; --text: #ecebe6; --muted: #9b998f; --line: #2c302a; }
+}
+body { font-family: "Figtree", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 16px; -webkit-font-smoothing: antialiased; }
+header { background: var(--bg); color: var(--text); padding: 18px 20px 6px; padding-top: max(18px, env(safe-area-inset-top)); max-width: 560px; margin: 0 auto; }
+header h1 { font-family: "Fraunces", Georgia, serif; font-size: 28px; font-weight: 600; letter-spacing: -0.01em; }
+#signOut { text-decoration: none; color: var(--muted); font-size: 14px; }
+main { padding: 8px 20px 110px; }
+input, select { border-radius: 12px; border-color: var(--line); padding: 12px 14px; }
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--green); outline-offset: -1px; border-color: transparent; }
+button.primary { border-radius: 12px; font-weight: 600; }
+.add { padding: 8px 16px; font-weight: 400; }
+button.chip { border-radius: 999px; padding: 7px 13px; font-size: 14px; color: var(--text); background: transparent; }
+
+/* Listval och formulär: lugnare, mindre */
+.listbar select { border: 0; background: transparent; padding-left: 0; font-family: "Fraunces", Georgia, serif; font-size: 20px; }
+.formfoot { margin-top: 8px; }
+.repeat { font-size: 14px; margin: 0; }
+.repeat select { border: 0; background: transparent; color: var(--text); padding: 4px 2px; font-size: 14px; font-weight: 500; }
+#sortToggle { border: 0; padding: 4px 0; color: var(--muted); }
+
+/* Liten handla-knapp i stället för stor grön balk */
+.listhead { display: flex; align-items: center; justify-content: space-between; margin: 22px 0 8px; }
+button.shop { margin: 0; font-size: 14px; font-weight: 600; background: var(--green-soft); color: var(--green); border: 0; border-radius: 999px; padding: 8px 14px; }
+body.shopping .listhead { display: none; }
+body.shopping #shopBanner { background: var(--green-soft); color: var(--green); font-size: 14px; padding: 10px 14px; border-radius: var(--radius); }
+@media (prefers-color-scheme: dark) { body.shopping #shopBanner { color: var(--green); } }
+
+/* Varorna som en sammanhängande lista med tunna linjer, inte separata kort */
+#items { margin-top: 0; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+#items:empty { display: none; }
+#items li { margin: 0; border: 0; border-radius: 0; border-bottom: 1px solid var(--line); padding: 2px 4px 2px 16px; background: none; }
+#items li:last-child { border-bottom: 0; }
+#items li label { padding: 10px 0; }
+.from { font-size: 13px; margin-top: 1px; }
+.badge { font-size: 14px; font-variant-numeric: tabular-nums; }
+.who { width: 20px; height: 20px; font-size: 11px; border: 0; background: var(--green-soft); color: var(--green); }
+button.icon.more { color: var(--muted); opacity: .7; }
+#items input[type=checkbox] { width: 22px; height: 22px; }
+
+/* Flikar med riktiga ikoner */
+#tabs { background: color-mix(in srgb, var(--card) 92%, transparent); backdrop-filter: blur(12px); }
+#tabs button { font-size: 12px; padding: 10px 0 12px; gap: 3px; }
+#tabs button span { font-size: 12px; font-weight: 500; }
+#tabs button.active { font-weight: 600; }
+
+/* Recept */
+#recipes li { border-radius: var(--radius); padding: 10px; gap: 14px; background: var(--card); }
+#recipes img, #recipes .noimg { width: 52px; height: 52px; border-radius: 10px; }
+#recipes .noimg { background: var(--green-soft); color: var(--green); font-family: "Fraunces", Georgia, serif; font-size: 22px; font-weight: 600; }
+#recipes .title { font-weight: 600; }
+#recipes .star { color: #c9932b; }
+#recipes .meta { font-size: 13px; margin-top: 2px; }
+.seg button { border-radius: 999px; background: transparent; font-weight: 500; }
+.seg button.on { background: var(--text); border-color: var(--text); color: var(--bg); }
+@media (prefers-color-scheme: dark) { .seg button.on { color: var(--bg); } }
+
+/* Veckomeny */
+.day { border-radius: var(--radius); background: var(--card); }
+.day h3 { font-family: "Fraunces", Georgia, serif; font-weight: 600; font-size: 17px; }
+.day.today { box-shadow: none; border-color: var(--green); }
+.meal .kind { font-size: 13px; }
+.meal .view.empty { font-size: 15px; opacity: .45; }
+
+/* Dialoger glider upp nerifrån, som i en riktig app */
+dialog { width: 100%; max-width: 560px; margin: auto auto 0; border-radius: 22px 22px 0 0; padding: 22px 20px calc(18px + env(safe-area-inset-bottom)); max-height: 90vh; }
+dialog h2 { font-family: "Fraunces", Georgia, serif; font-size: 22px; font-weight: 600; }
+#sheetBody button.option { background: transparent; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 14px 2px; margin: 0; }
+#sheetClose { text-decoration: none; font-weight: 500; }
