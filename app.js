@@ -9,7 +9,7 @@ import {
   runTransaction, writeBatch, serverTimestamp, Timestamp, increment,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { firebaseConfig, recipeImportUrl } from "./config.js";
-import { scaleIngredient, isBasic, DEFAULT_BASICS, mergeQty, itemKey } from "./ingredients.js?v=15";
+import { scaleIngredient, isBasic, DEFAULT_BASICS, mergeQty, itemKey } from "./ingredients.js?v=16";
 
 const DAY = 24 * 60 * 60 * 1000;
 // Standardlistan. Varor från innan det fanns flera listor saknar listId och hör hit.
@@ -39,7 +39,7 @@ let menus = {};
 let recipes = [];
 let basics = DEFAULT_BASICS;
 // Det som brukar ligga i frysen. Står det i en rätt kommer en påminnelse kvällen före.
-const DEFAULT_FROZEN = ["kyckling"];
+const DEFAULT_FROZEN = ["kyckling", "kött", "fisk"];
 let frozen = DEFAULT_FROZEN;
 let menusFresh = false;
 let historyLoaded = false;
@@ -1011,6 +1011,18 @@ function leftovers(id, i, meal, text) {
 const dateKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const joinSv = (words) => (words.length > 1 ? `${words.slice(0, -1).join(", ")} och ${words.at(-1)}` : words[0]);
 
+// Samlingsord i frysvarorna: "kött" räknar alla sorters kött, "färs" alla färser osv.
+const FROZEN_GROUPS = {
+  kött: ["kött", "entrecote", "ryggbiff", "rostbiff", "biff", "oxfile", "fläskfile", "ytterfile", "innerfile", "kalvfile",
+    "lammfile", "karre", "kotlett", "högrev", "grytbit", "fransyska", "rulle", "lammstek", "fläskstek", "kalvstek", "oxbringa",
+    "bringa", "revben", "fläsksida", "färs", "bacon", "fläskkarre", "flankstek", "picanha", "tri-tip", "lövbiff", "schnitzel"],
+  färs: ["färs"],
+  köttfärs: ["färs"],
+  fisk: ["fisk", "lax", "torsk", "sej", "kolja", "röding", "regnbåge", "räk", "pangasius", "hoki", "tonfisk", "kummel"],
+  kyckling: ["kyckling"],
+};
+const frozenWords = (w) => (FROZEN_GROUPS[w] || [w]).map((x) => x.replace(/[éè]/g, "e"));
+
 function upcomingReminders() {
   const out = [];
   const today = new Date(new Date().setHours(0, 0, 0, 0));
@@ -1028,8 +1040,8 @@ function upcomingReminders() {
       const hay = [
         ...text.split("\n").filter((l) => !/^rester:/i.test(l.trim()) && !/^(https?:\/\/|www\.)/.test(l.trim())),
         ...recipesInMeal(week, key).flatMap((x) => [x.recipe.title, ...(x.recipe.ingredients || [])]),
-      ].join("\n").toLocaleLowerCase("sv");
-      const found = frozen.map((w) => w.trim().toLocaleLowerCase("sv")).filter((w) => w && hay.includes(w));
+      ].join("\n").toLocaleLowerCase("sv").replace(/[éè]/g, "e").replace(/ô/g, "o");
+      const found = frozen.map((w) => w.trim().toLocaleLowerCase("sv")).filter((w) => w && frozenWords(w).some((x) => hay.includes(x)));
       if (found.length) out.push({ ...base, title: `🧊 Ta fram ${joinSv(found)} ur frysen`, tag: `frys-${dateKey(day)}-${meal}` });
       const remind = (week[`${key}_remind`] || "").trim();
       if (remind) out.push({ ...base, title: `🔔 ${remind}`, tag: `egen-${dateKey(day)}-${meal}` });
@@ -1131,7 +1143,7 @@ async function reminderSettings() {
 
     const label = document.createElement("div");
     label.className = "label";
-    label.textContent = "Brukar ligga i frysen (en per rad)";
+    label.textContent = "Brukar ligga i frysen (en per rad). Samlingsord som kyckling, kött, färs och fisk räknar alla sorter.";
     const ta = input(frozen.join("\n"), { multiline: true });
     ta.style.minHeight = "110px";
     ta.style.width = "100%";
