@@ -259,5 +259,7 @@ dialog { max-height: 88vh; overflow-y: auto; }
 .actions { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
 
 #recipeFilters { margin: 10px 0 4px; }
-#copyWeek { display: block; margin: 0 auto 12px; }
+.menubar { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin: 0 0 12px; }
+.meal .more { flex: none; align-self: flex-start; padding: 0 6px; margin: -2px -6px 0 0; }
+.meal .remind { font-size: 13px; color: var(--muted); margin-top: 2px; }
 #sheetBody textarea.note { min-height: 60px; }

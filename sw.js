@@ -1,8 +1,8 @@
 // Sparar appens filer så att den startar snabbt och även utan nät.
 // Listan själv synkas av Firebase, som har en egen offline-cache.
-const CACHE = "matlista-v14";
+const CACHE = "matlista-v15";
 // index.html laddar style.css och app.js med ?v=N, så en ny version får alltid nya adresser.
-const FILES = ["./", "index.html", "style.css?v=14", "app.js?v=14", "ingredients.js?v=14", "config.js", "manifest.webmanifest", "icons/icon-192.png"];
+const FILES = ["./", "index.html", "style.css?v=15", "app.js?v=15", "ingredients.js?v=15", "config.js", "manifest.webmanifest", "icons/icon-192.png"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES.map((f) => new Request(f, { cache: "reload" })))));
@@ -29,4 +29,24 @@ self.addEventListener("fetch", (e) => {
       })
       .catch(() => caches.match(e.request)),
   );
+});
+
+// Påminnelser från Cloudflare, t.ex. "Ta fram kyckling ur frysen".
+self.addEventListener("push", (e) => {
+  let msg = {};
+  try { msg = e.data ? e.data.json() : {}; } catch { msg = { title: e.data?.text() }; }
+  e.waitUntil(self.registration.showNotification(msg.title || "Matlista", {
+    body: msg.body || "",
+    tag: msg.tag || undefined,
+    icon: "icons/icon-192.png",
+    badge: "icons/icon-192.png",
+  }));
+});
+
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((wins) => {
+    const win = wins.find((w) => w.url.startsWith(self.registration.scope));
+    return win ? win.focus() : self.clients.openWindow("./");
+  }));
 });

@@ -9,7 +9,7 @@ import {
   runTransaction, writeBatch, serverTimestamp, Timestamp, increment,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { firebaseConfig, recipeImportUrl } from "./config.js";
-import { scaleIngredient, isBasic, DEFAULT_BASICS, mergeQty, itemKey } from "./ingredients.js?v=14";
+import { scaleIngredient, isBasic, DEFAULT_BASICS, mergeQty, itemKey } from "./ingredients.js?v=15";
 
 const DAY = 24 * 60 * 60 * 1000;
 // Standardlistan. Varor från innan det fanns flera listor saknar listId och hör hit.
@@ -38,6 +38,10 @@ let history = [];
 let menus = {};
 let recipes = [];
 let basics = DEFAULT_BASICS;
+// Det som brukar ligga i frysen. Står det i en rätt kommer en påminnelse kvällen före.
+const DEFAULT_FROZEN = ["kyckling"];
+let frozen = DEFAULT_FROZEN;
+let menusFresh = false;
 let historyLoaded = false;
 let listsLoaded = false;
 let pendingList = null;
@@ -101,7 +105,7 @@ function denied(user) {
 function start(user) {
   currentUser = user;
   const onError = (err) => { if (err.code === "permission-denied") denied(user); else console.error(err); };
-  const watch = (col, fn) => unsubscribers.push(onSnapshot(col, (snap) => fn(snap.docs.map((d) => ({ id: d.id, ...d.data() }))), onError));
+  const watch = (col, fn) => unsubscribers.push(onSnapshot(col, (snap) => fn(snap.docs.map((d) => ({ id: d.id, ...d.data() })), snap), onError));
   watch(itemsCol, (docs) => {
     items = docs;
     renderItems();
@@ -123,17 +127,23 @@ function start(user) {
     }
     renderLists();
   });
-  watch(menusCol, (docs) => {
+  watch(menusCol, (docs, snap) => {
     menus = Object.fromEntries(docs.map((d) => [d.id, d]));
+    if (!snap.metadata.fromCache) menusFresh = true;
     renderMenu();
+    syncReminders();
   });
   watch(recipesCol, (docs) => {
     recipes = docs;
     renderRecipes();
+    syncReminders();
   });
   watch(settingsCol, (docs) => {
     const b = docs.find((d) => d.id === "basics");
     basics = b && Array.isArray(b.items) ? b.items : DEFAULT_BASICS;
+    const f = docs.find((d) => d.id === "frozen");
+    frozen = f && Array.isArray(f.items) ? f.items : DEFAULT_FROZEN;
+    syncReminders();
   });
   handleShare();
   watch(historyCol, (docs) => {
@@ -709,6 +719,7 @@ $("weekPrev").onclick = () => { weekStart = addDays(weekStart, -7); renderMenu()
 $("weekNext").onclick = () => { weekStart = addDays(weekStart, 7); renderMenu(); };
 $("weekToday").onclick = () => { weekStart = mondayOf(new Date()); renderMenu(); };
 $("copyWeek").onclick = () => chooseWeekToCopy();
+$("reminders").onclick = () => reminderSettings();
 
 const MEAL_KEYS = DAYS.flatMap((_, i) => MEALS.map(([m]) => `d${i}_${m}`));
 const weekHasFood = (w) => MEAL_KEYS.some((k) => (w?.[k] || "").trim());
@@ -890,7 +901,24 @@ function renderMenu() {
       const kind = document.createElement("span");
       kind.className = "kind";
       kind.textContent = label;
-      row.append(kind, mealView(id, field, data[field] || ""));
+      const text = data[field] || "";
+      const view = mealView(id, field, text);
+      const remind = data[`${field}_remind`];
+      if (remind) {
+        const r = document.createElement("div");
+        r.className = "remind";
+        r.textContent = `🔔 ${remind} (kvällen före)`;
+        view.append(r);
+      }
+      row.append(kind, view);
+      if (text || remind) {
+        const more = document.createElement("button");
+        more.className = "icon more";
+        more.setAttribute("aria-label", "Mer");
+        more.textContent = "⋯";
+        more.onclick = () => mealMenu(id, i, key, data);
+        row.append(more);
+      }
       card.append(row);
     }
     days.append(card);
@@ -922,6 +950,198 @@ function mealView(id, field, text) {
     ta.focus();
   };
   return view;
+}
+
+// Rättens namn: första raden som inte är en länk eller anteckning, utan "(6 port)" och "Rester:".
+function dishName(text) {
+  const line = (text || "").split("\n").map((l) => l.trim())
+    .find((l) => l && !/^(https?:\/\/|www\.)/.test(l) && !l.startsWith("📝")) || "";
+  return line.replace(/^rester:\s*/i, "").replace(/\s*\(\d+ port\)$/, "").trim();
+}
+
+function mealMenu(id, i, meal, data) {
+  const key = `d${i}_${meal}`;
+  const text = data[key] || "";
+  const remind = data[`${key}_remind`] || "";
+  const label = MEALS.find(([m]) => m === meal)[1].toLowerCase();
+  openSheet(`${DAYS[i]} ${label}`, (body) => {
+    if (dishName(text)) body.append(option(`🍲 Rester av ${dishName(text)} en annan dag`, () => leftovers(id, i, meal, text)));
+    body.append(option(remind ? `🔔 Ändra påminnelsen (${remind})` : "🔔 Påminn mig kvällen före…", () => {
+      const value = prompt("Vad ska påminnelsen säga kvällen före? T.ex. \"Ta upp kycklingen\". Lämna tomt för att ta bort.", remind);
+      if (value === null) return;
+      setDoc(doc(menusCol, id), { [`${key}_remind`]: value.trim(), updatedAt: serverTimestamp() }, { merge: true });
+    }));
+  });
+}
+
+// Rester: samma rätt en dag till, utan att varorna hamnar på listan igen.
+function leftovers(id, i, meal, text) {
+  const dish = dishName(text);
+  const monday = mondayFromId(id);
+  const state = { week: i + 2 > 6 ? 1 : 0, day: (i + 2) % 7, meal };
+  openSheet(`Rester av ${dish}`, (body) => {
+    const p = document.createElement("p");
+    p.className = "muted small";
+    p.textContent = "Rätten läggs in en gång till, men inga varor läggs på listan.";
+    const weekSeg = seg([["Samma vecka", 0], ["Veckan efter", 1]], () => state.week, (v) => { state.week = v; });
+    const daySeg = seg(DAYS.map((d, j) => [d.slice(0, 2), j]), () => state.day, (v) => { state.day = v; });
+    const mealSeg = seg(MEALS.map(([k, l]) => [l, k]), () => state.meal, (v) => { state.meal = v; });
+    const go = button("Lägg in resterna", async () => {
+      $("sheet").close();
+      const targetMonday = addDays(monday, state.week * 7);
+      const targetId = weekId(targetMonday);
+      const key = `d${state.day}_${state.meal}`;
+      const before = menus[targetId]?.[key] || "";
+      const entry = `Rester: ${dish}`;
+      await setDoc(doc(menusCol, targetId), { [key]: before ? `${before}\n${entry}` : entry, updatedAt: serverTimestamp() }, { merge: true });
+      const where = `${DAYS[state.day].toLowerCase()} ${MEALS.find(([m]) => m === state.meal)[1].toLowerCase()}`;
+      showUndo(`Rester på ${where}${state.week ? " veckan efter" : ""}`, () =>
+        setDoc(doc(menusCol, targetId), { [key]: before, updatedAt: serverTimestamp() }, { merge: true }));
+    });
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    actions.append(go);
+    body.append(p, field("Vecka", weekSeg), field("Dag", daySeg), field("Måltid", mealSeg), actions);
+  });
+}
+
+// ---------- Påminnelser ----------
+// Telefonerna räknar ut kommande påminnelser och skickar dem till Cloudflare, som skickar notisen kl 18 kvällen före.
+
+const dateKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const joinSv = (words) => (words.length > 1 ? `${words.slice(0, -1).join(", ")} och ${words.at(-1)}` : words[0]);
+
+function upcomingReminders() {
+  const out = [];
+  const today = new Date(new Date().setHours(0, 0, 0, 0));
+  for (let n = 1; n <= 14; n++) {
+    const day = addDays(today, n);
+    const week = menus[weekId(mondayOf(day))];
+    if (!week) continue;
+    const i = (day.getDay() + 6) % 7;
+    for (const [meal, label] of MEALS) {
+      const key = `d${i}_${meal}`;
+      const text = week[key] || "";
+      const dish = dishName(text);
+      const base = { date: dateKey(addDays(day, -1)), body: `Imorgon ${label.toLowerCase()}: ${dish || "se veckomenyn"}` };
+      // Rester är redan lagade, så de räknas inte.
+      const hay = [
+        ...text.split("\n").filter((l) => !/^rester:/i.test(l.trim()) && !/^(https?:\/\/|www\.)/.test(l.trim())),
+        ...recipesInMeal(week, key).flatMap((x) => [x.recipe.title, ...(x.recipe.ingredients || [])]),
+      ].join("\n").toLocaleLowerCase("sv");
+      const found = frozen.map((w) => w.trim().toLocaleLowerCase("sv")).filter((w) => w && hay.includes(w));
+      if (found.length) out.push({ ...base, title: `🧊 Ta fram ${joinSv(found)} ur frysen`, tag: `frys-${dateKey(day)}-${meal}` });
+      const remind = (week[`${key}_remind`] || "").trim();
+      if (remind) out.push({ ...base, title: `🔔 ${remind}`, tag: `egen-${dateKey(day)}-${meal}` });
+    }
+  }
+  return out;
+}
+
+async function pushApi(path, body) {
+  const headers = {};
+  if (body) {
+    headers["Content-Type"] = "application/json";
+    headers.Authorization = `Bearer ${await currentUser.getIdToken()}`;
+  }
+  const res = await fetch(new URL(`push/${path}`, recipeImportUrl), { method: body ? "POST" : "GET", headers, body: body ? JSON.stringify(body) : undefined });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(data.error || String(res.status)), { code: data.error || "http" });
+  return data;
+}
+
+let syncTimer = null;
+function syncReminders(force = false) {
+  if (!recipeImportUrl || !currentUser || !menusFresh) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(async () => {
+    const reminders = upcomingReminders();
+    const json = JSON.stringify(reminders);
+    if (!force && local.get("pushSchedule", "") === json) return;
+    try {
+      await pushApi("schedule", { reminders });
+      local.set("pushSchedule", json);
+    } catch { /* Cloudflare inte uppsatt än, eller inget nät: försöker igen nästa gång */ }
+  }, 2000);
+}
+
+const b64ToBytes = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)), (c) => c.charCodeAt(0));
+const bytesToB64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+async function currentSubscription() {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) return null;
+  const reg = await Promise.race([navigator.serviceWorker.ready, new Promise((r) => setTimeout(r, 3000))]);
+  return reg ? reg.pushManager.getSubscription() : null;
+}
+
+async function enablePush() {
+  if (!("PushManager" in window) || !("Notification" in window)) throw Object.assign(new Error(), { code: "unsupported" });
+  if ((await Notification.requestPermission()) !== "granted") throw Object.assign(new Error(), { code: "denied" });
+  const { publicKey } = await pushApi("key");
+  const reg = await navigator.serviceWorker.ready;
+  let sub = await reg.pushManager.getSubscription();
+  if (sub && sub.options.applicationServerKey && bytesToB64(sub.options.applicationServerKey) !== publicKey) {
+    await sub.unsubscribe();
+    sub = null;
+  }
+  sub ||= await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(publicKey) });
+  await pushApi("subscribe", { subscription: sub.toJSON() });
+  syncReminders(true);
+}
+
+const PUSH_ERRORS = {
+  unsupported: "Den här webbläsaren kan inte visa notiser. Öppna Matlista från ikonen på hemskärmen och försök igen.",
+  denied: "Notiser är blockerade för Matlista. Tillåt dem i telefonens inställningar (Appar → Chrome eller Matlista → Aviseringar) och försök igen.",
+  "no-storage": "Utskicket är inte uppsatt i Cloudflare än. Följ guiden först.",
+  auth: "Kunde inte bekräfta inloggningen. Logga ut och in igen.",
+};
+
+async function reminderSettings() {
+  const sub = await currentSubscription().catch(() => null);
+  const on = !!sub && "Notification" in window && Notification.permission === "granted";
+  openSheet("🔔 Påminnelser", (body) => {
+    const p = document.createElement("p");
+    p.className = "muted small";
+    p.textContent = "Kl 18 kvällen före kommer en notis om något i morgondagens rätter ligger i frysen. Egna påminnelser lägger du på en måltid via ⋯ i veckomenyn. Varje telefon slås på för sig.";
+    const msg = document.createElement("p");
+    msg.className = "small";
+    msg.hidden = true;
+    const say = (text, error = false) => { msg.textContent = text; msg.className = "small" + (error ? " error" : ""); msg.hidden = false; };
+    const fail = (err) => say(PUSH_ERRORS[err.code] || "Något gick fel. Kontrollera nätet och försök igen.", true);
+
+    const status = document.createElement("p");
+    status.innerHTML = on ? "✅ <b>På</b> för den här telefonen" : "Av för den här telefonen";
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    if (on) {
+      actions.append(button("Skicka en testnotis", async () => {
+        try { await pushApi("test", { endpoint: sub.endpoint }); say("Skickad. Den bör synas om några sekunder."); } catch (err) { fail(err); }
+      }, "chip wide"));
+      actions.append(button("Stäng av på den här telefonen", async () => {
+        try { await pushApi("unsubscribe", { endpoint: sub.endpoint }); } catch { /* tas bort automatiskt senare */ }
+        await sub.unsubscribe();
+        reminderSettings();
+      }, "chip wide"));
+    } else {
+      actions.append(button("Slå på notiser på den här telefonen", async (e) => {
+        e.target.disabled = true;
+        try { await enablePush(); reminderSettings(); } catch (err) { e.target.disabled = false; fail(err); }
+      }));
+    }
+
+    const label = document.createElement("div");
+    label.className = "label";
+    label.textContent = "Brukar ligga i frysen (en per rad)";
+    const ta = input(frozen.join("\n"), { multiline: true });
+    ta.style.minHeight = "110px";
+    ta.style.width = "100%";
+    const save = button("Spara frysvarorna", async () => {
+      const items = ta.value.split("\n").map((x) => x.trim().toLocaleLowerCase("sv")).filter(Boolean);
+      await setDoc(doc(settingsCol, "frozen"), { items });
+      say("Sparat.");
+    }, "chip wide");
+    body.append(p, status, actions, msg, label, ta, save);
+  });
 }
 
 // Gör webbadresser klickbara och visar dem kortare, t.ex. "ica.se/recept/kycklinggratang…".

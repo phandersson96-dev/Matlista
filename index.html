@@ -8,7 +8,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="style.css?v=14">
+  <link rel="stylesheet" href="style.css?v=15">
 </head>
 <body>
   <header>
@@ -110,7 +110,10 @@
         <button id="weekNext" class="icon big" aria-label="Nästa vecka">›</button>
       </div>
       <button id="weekToday" class="chip" hidden>Till denna vecka</button>
-      <button id="copyWeek" class="chip">📋 Kopiera en tidigare vecka hit</button>
+      <div class="menubar">
+        <button id="copyWeek" class="chip">📋 Kopiera vecka</button>
+        <button id="reminders" class="chip">🔔 Påminnelser</button>
+      </div>
       <div id="days"></div>
      </div>
 
@@ -133,6 +136,6 @@
     <button id="sheetClose" class="link">Avbryt</button>
   </dialog>
 
-  <script type="module" src="app.js?v=14"></script>
+  <script type="module" src="app.js?v=15"></script>
 </body>
 </html>
