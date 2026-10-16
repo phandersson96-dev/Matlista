@@ -9,7 +9,7 @@ import {
   runTransaction, writeBatch, serverTimestamp, Timestamp, increment,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { firebaseConfig, recipeImportUrl } from "./config.js";
-import { scaleIngredient, isBasic, DEFAULT_BASICS, mergeQty, itemKey } from "./ingredients.js?v=19";
+import { scaleIngredient, isBasic, DEFAULT_BASICS, mergeQty, itemKey } from "./ingredients.js?v=20";
 
 const DAY = 24 * 60 * 60 * 1000;
 // Standardlistan. Varor från innan det fanns flera listor saknar listId och hör hit.
@@ -131,6 +131,10 @@ function start(user) {
     menus = Object.fromEntries(docs.map((d) => [d.id, d]));
     if (!snap.metadata.fromCache) menusFresh = true;
     renderMenu();
+    if (!scrolledToToday && tab === "menu") {
+      scrolledToToday = true;
+      document.querySelector(".day.today")?.scrollIntoView({ block: "start" });
+    }
     syncReminders();
   });
   watch(recipesCol, (docs) => {
@@ -220,8 +224,8 @@ $("listMenu").onclick = () => {
         selectList(MAIN_LIST);
       }, "danger"));
     }
-    body.append(option("Påminnelser och frysvaror", () => reminderSettings()));
-    body.append(option("Basvaror", () => $("editBasics").click()));
+    body.append(option("Basvaror och frysvaror", () => $("editBasics").click()));
+    body.append(option("Påminnelser", () => reminderSettings()));
     body.append(option(`Logga ut (${currentUser.email})`, () => signOut(auth)));
   });
 };
@@ -679,10 +683,11 @@ function badge(t) {
 
 // ---------- Flikar ----------
 
-let tab = local.get("tab", "list");
+// Appen startar på veckomenyn, utom mitt i Handla-läget då inköpslistan öppnas direkt.
+let tab = shopping ? "list" : "menu";
+let scrolledToToday = tab !== "menu";
 function setTab(t) {
   tab = t;
-  local.set("tab", t);
   show("listView", t === "list");
   show("recipeView", t === "recipes");
   show("menuView", t === "menu");
@@ -1117,10 +1122,10 @@ const PUSH_ERRORS = {
 async function reminderSettings() {
   const sub = await currentSubscription().catch(() => null);
   const on = !!sub && "Notification" in window && Notification.permission === "granted";
-  openSheet("🔔 Påminnelser", (body) => {
+  openSheet("Påminnelser", (body) => {
     const p = document.createElement("p");
     p.className = "muted small";
-    p.textContent = "Kl 18 kvällen före kommer en notis om något i morgondagens rätter ligger i frysen. Egna påminnelser lägger du på en måltid via ⋯ i veckomenyn. Varje telefon slås på för sig.";
+    p.textContent = "Kl 18 kvällen före kommer en notis om något i morgondagens rätter ligger i frysen (se Basvaror och frysvaror). Egna påminnelser lägger du på en måltid via ⋯ i veckomenyn. Varje telefon slås på för sig.";
     const msg = document.createElement("p");
     msg.className = "small";
     msg.hidden = true;
@@ -1147,18 +1152,7 @@ async function reminderSettings() {
       }));
     }
 
-    const label = document.createElement("div");
-    label.className = "label";
-    label.textContent = "Brukar ligga i frysen (en per rad). Samlingsord som kyckling, kött, färs och fisk räknar alla sorter.";
-    const ta = input(frozen.join("\n"), { multiline: true });
-    ta.style.minHeight = "110px";
-    ta.style.width = "100%";
-    const save = button("Spara frysvarorna", async () => {
-      const items = ta.value.split("\n").map((x) => x.trim().toLocaleLowerCase("sv")).filter(Boolean);
-      await setDoc(doc(settingsCol, "frozen"), { items });
-      say("Sparat.");
-    }, "chip wide");
-    body.append(p, status, actions, msg, label, ta, save);
+    body.append(p, status, actions, msg);
   });
 }
 
@@ -1669,20 +1663,34 @@ async function addPlannedRecipe(r, state, base, monday) {
 }
 
 $("editBasics").onclick = () => {
-  openSheet("Basvaror", (body) => {
+  openSheet("Basvaror och frysvaror", (body) => {
+    const lines = (ta) => ta.value.split("\n").map((x) => x.trim().toLocaleLowerCase("sv")).filter(Boolean);
+    const h1 = document.createElement("div");
+    h1.className = "label";
+    h1.textContent = "Basvaror";
     const p = document.createElement("p");
     p.className = "muted small";
     p.textContent = "Saker ni nästan alltid har hemma. De är urbockade från början när ni lägger ett recept i veckomenyn. En per rad.";
     const ta = input(basics.join("\n"), { multiline: true });
-    ta.style.minHeight = "260px";
+    ta.style.minHeight = "200px";
+    const h2 = document.createElement("div");
+    h2.className = "label";
+    h2.textContent = "Frysvaror";
+    const p2 = document.createElement("p");
+    p2.className = "muted small";
+    p2.textContent = "Står något av det här i morgondagens rätt kommer en påminnelse kl 18 om att ta fram det. Samlingsord som kyckling, kött, färs och fisk räknar alla sorter.";
+    const fz = input(frozen.join("\n"), { multiline: true });
+    fz.style.minHeight = "110px";
     const actions = document.createElement("div");
     actions.className = "actions";
     actions.append(button("Spara", async () => {
-      const items = ta.value.split("\n").map((x) => x.trim().toLocaleLowerCase("sv")).filter(Boolean);
       $("sheet").close();
-      await setDoc(doc(settingsCol, "basics"), { items });
+      await Promise.all([
+        setDoc(doc(settingsCol, "basics"), { items: lines(ta) }),
+        setDoc(doc(settingsCol, "frozen"), { items: lines(fz) }),
+      ]);
     }));
-    body.append(p, ta, actions);
+    body.append(h1, p, ta, h2, p2, fz, actions);
   });
 };
 
