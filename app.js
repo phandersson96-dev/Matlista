@@ -9,7 +9,7 @@ import {
   runTransaction, writeBatch, serverTimestamp, Timestamp, increment,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { firebaseConfig, recipeImportUrl } from "./config.js";
-import { scaleIngredient, isBasic, DEFAULT_BASICS, mergeQty, itemKey } from "./ingredients.js?v=18";
+import { scaleIngredient, isBasic, DEFAULT_BASICS, mergeQty, itemKey } from "./ingredients.js?v=19";
 
 const DAY = 24 * 60 * 60 * 1000;
 // Standardlistan. Varor från innan det fanns flera listor saknar listId och hör hit.
@@ -201,14 +201,14 @@ $("newList").onclick = async () => {
 
 $("listMenu").onclick = () => {
   const list = sortedLists().find((l) => l.id === currentList);
-  openSheet(list.name, (body) => {
+  openSheet("Inställningar", (body) => {
     body.append(option("+ Ny lista", () => $("newList").click()));
-    body.append(option("Byt namn", async () => {
+    body.append(option(`Byt namn på ${list.name}`, async () => {
       const name = (prompt("Nytt namn på listan:", list.name) || "").trim();
       if (name) await setDoc(doc(listsCol, list.id), { name }, { merge: true });
     }));
     if (list.id !== MAIN_LIST) {
-      body.append(option("Ta bort listan", async () => {
+      body.append(option(`Ta bort ${list.name}`, async () => {
         const its = items.filter((i) => listOf(i) === list.id);
         const recs = recurring.filter((r) => listOf(r) === list.id);
         if (!confirm(`Ta bort ${list.name}${its.length ? ` och dess ${its.length} varor` : ""}?`)) return;
@@ -221,6 +221,7 @@ $("listMenu").onclick = () => {
       }, "danger"));
     }
     body.append(option("Påminnelser och frysvaror", () => reminderSettings()));
+    body.append(option("Basvaror", () => $("editBasics").click()));
     body.append(option(`Logga ut (${currentUser.email})`, () => signOut(auth)));
   });
 };
