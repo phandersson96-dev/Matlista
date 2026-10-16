@@ -201,6 +201,7 @@ $("newList").onclick = async () => {
 $("listMenu").onclick = () => {
   const list = sortedLists().find((l) => l.id === currentList);
   openSheet(list.name, (body) => {
+    body.append(option("+ Ny lista", () => $("newList").click()));
     body.append(option("Byt namn", async () => {
       const name = (prompt("Nytt namn på listan:", list.name) || "").trim();
       if (name) await setDoc(doc(listsCol, list.id), { name }, { merge: true });
@@ -218,6 +219,7 @@ $("listMenu").onclick = () => {
         selectList(MAIN_LIST);
       }, "danger"));
     }
+    body.append(option(`Logga ut (${currentUser.email})`, () => signOut(auth)));
   });
 };
 
@@ -419,7 +421,7 @@ $("shopEnd").onclick = () => setShopping(false);
 document.body.classList.toggle("shopping", shopping);
 
 function renderSort() {
-  $("sortToggle").textContent = sortMode === "alpha" ? "⇅ A–Ö" : "⇅ Senaste";
+  $("sortToggle").textContent = sortMode === "alpha" ? "A–Ö ⇅" : "Senaste ⇅";
 }
 $("sortToggle").onclick = () => {
   sortMode = sortMode === "alpha" ? "recent" : "alpha";
@@ -474,7 +476,7 @@ function renderItems() {
     list.append(li);
   }
   const left = mine.filter((i) => !i.checked).length;
-  $("listCount").textContent = left ? `${left} ${left === 1 ? "vara" : "varor"} kvar` : "";
+  $("listCount").textContent = left ? `${left} ${left === 1 ? "vara" : "varor"} · ` : "";
   show("empty", mine.length === 0);
   show("done", mine.some((i) => i.checked));
   renderLists();

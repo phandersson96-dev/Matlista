@@ -58,7 +58,7 @@
       <div class="listbar">
         <select id="listSelect" aria-label="Välj lista"></select>
         <button id="listMenu" class="icon" aria-label="Hantera lista">⋯</button>
-        <button id="newList" class="chip">+ Ny lista</button>
+        <button id="newList" class="chip" hidden>+ Ny lista</button>
       </div>
 
       <form id="addForm" autocomplete="off">
@@ -81,12 +81,11 @@
               <option value="custom">Var X:e dag…</option>
             </select>
           </label>
-          <button type="button" id="sortToggle" class="chip"></button>
         </div>
       </form>
 
       <div class="listhead">
-        <span id="listCount" class="muted small"></span>
+        <span class="muted small"><span id="listCount"></span><button type="button" id="sortToggle" class="link sort"></button></span>
         <button id="shopStart" class="shop">Börja handla</button>
       </div>
       <p id="shopBanner"><b>Handlar</b> · tryck på en vara för att bocka av den</p>

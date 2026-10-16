@@ -340,3 +340,20 @@ dialog { width: 100%; max-width: 560px; margin: auto auto 0; border-radius: 22px
 dialog h2 { font-family: "Fraunces", Georgia, serif; font-size: 22px; font-weight: 600; }
 #sheetBody button.option { background: transparent; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 14px 2px; margin: 0; }
 #sheetClose { text-decoration: none; font-weight: 500; }
+
+/* ---- Tätare: ingen rubrikbalk, en rad för att lägga till, mindre rader ---- */
+body:has(#app:not([hidden])) header { display: none; }
+main { padding-top: max(14px, env(safe-area-inset-top)); }
+.listbar { margin-bottom: 10px; }
+.listbar select { font-size: 22px; padding: 4px 0; flex: 0 1 auto; max-width: 80%; }
+.listbar #listMenu { margin-left: auto; }
+.formfoot { display: none; }
+#addForm input, #addForm .add { padding-top: 10px; padding-bottom: 10px; }
+.listhead { margin: 14px 0 6px; }
+button.link.sort { text-decoration: none; color: var(--muted); padding: 0; font-size: 14px; }
+#items li { padding: 0 2px 0 14px; }
+#items li label { padding: 7px 0; gap: 10px; }
+#items .text { font-size: 16px; line-height: 1.25; }
+.from { font-size: 12.5px; }
+button.icon.more { padding: 6px 8px; }
+#recipeView > form { margin-top: 2px; }
