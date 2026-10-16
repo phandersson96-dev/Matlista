@@ -10,4 +10,4 @@ export const firebaseConfig = {
 };
 
 // Adressen till receptimporten i Cloudflare (se worker/recept.js). Tom = bara manuell inmatning.
-export const recipeImportUrl = "";
+export const recipeImportUrl = "https://matlistan.phandersson96.workers.dev/";
