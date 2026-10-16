@@ -9,7 +9,7 @@ import {
   runTransaction, writeBatch, serverTimestamp, Timestamp, increment,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { firebaseConfig, recipeImportUrl } from "./config.js";
-import { scaleIngredient, isBasic, DEFAULT_BASICS, mergeQty, itemKey } from "./ingredients.js?v=17";
+import { scaleIngredient, isBasic, DEFAULT_BASICS, mergeQty, itemKey } from "./ingredients.js?v=18";
 
 const DAY = 24 * 60 * 60 * 1000;
 // Standardlistan. Varor från innan det fanns flera listor saknar listId och hör hit.
@@ -174,7 +174,8 @@ function renderLists() {
   sel.innerHTML = "";
   for (const l of all) {
     const open = items.filter((i) => listOf(i) === l.id && !i.checked).length;
-    sel.add(new Option(open ? `${l.name} (${open})` : l.name, l.id));
+    // Antalet för den öppna listan står redan ovanför varorna.
+    sel.add(new Option(open && l.id !== currentList ? `${l.name} (${open})` : l.name, l.id));
   }
   sel.value = currentList;
 }
@@ -219,6 +220,7 @@ $("listMenu").onclick = () => {
         selectList(MAIN_LIST);
       }, "danger"));
     }
+    body.append(option("Påminnelser och frysvaror", () => reminderSettings()));
     body.append(option(`Logga ut (${currentUser.email})`, () => signOut(auth)));
   });
 };
@@ -723,7 +725,6 @@ $("weekPrev").onclick = () => { weekStart = addDays(weekStart, -7); renderMenu()
 $("weekNext").onclick = () => { weekStart = addDays(weekStart, 7); renderMenu(); };
 $("weekToday").onclick = () => { weekStart = mondayOf(new Date()); renderMenu(); };
 $("copyWeek").onclick = () => chooseWeekToCopy();
-$("reminders").onclick = () => reminderSettings();
 
 const MEAL_KEYS = DAYS.flatMap((_, i) => MEALS.map(([m]) => `d${i}_${m}`));
 const weekHasFood = (w) => MEAL_KEYS.some((k) => (w?.[k] || "").trim());

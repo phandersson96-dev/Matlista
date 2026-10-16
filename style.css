@@ -358,3 +358,4 @@ button.link.sort { text-decoration: none; color: var(--muted); padding: 0; font-
 button.icon.more { padding: 6px 8px; }
 #recipeView > form { margin-top: 2px; }
 body.shopping #items li { padding: 2px 14px; }
+.listbar select { font-family: inherit; font-size: 19px; font-weight: 600; }
