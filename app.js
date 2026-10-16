@@ -9,7 +9,7 @@ import {
   runTransaction, writeBatch, serverTimestamp, Timestamp, increment,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { firebaseConfig, recipeImportUrl } from "./config.js";
-import { scaleIngredient, isBasic, DEFAULT_BASICS, mergeQty, itemKey } from "./ingredients.js?v=16";
+import { scaleIngredient, isBasic, DEFAULT_BASICS, mergeQty, itemKey } from "./ingredients.js?v=17";
 
 const DAY = 24 * 60 * 60 * 1000;
 // Standardlistan. Varor från innan det fanns flera listor saknar listId och hör hit.
@@ -1106,8 +1106,8 @@ async function enablePush() {
 }
 
 const PUSH_ERRORS = {
-  unsupported: "Den här webbläsaren kan inte visa notiser. Öppna Matlista från ikonen på hemskärmen och försök igen.",
-  denied: "Notiser är blockerade för Matlista. Tillåt dem i telefonens inställningar (Appar → Chrome eller Matlista → Aviseringar) och försök igen.",
+  unsupported: "Den här webbläsaren kan inte visa notiser. Öppna Matveckan från ikonen på hemskärmen och försök igen.",
+  denied: "Notiser är blockerade för Matveckan. Tillåt dem i telefonens inställningar (Appar → Chrome eller Matveckan → Aviseringar) och försök igen.",
   "no-storage": "Utskicket är inte uppsatt i Cloudflare än. Följ guiden först.",
   auth: "Kunde inte bekräfta inloggningen. Logga ut och in igen.",
 };
