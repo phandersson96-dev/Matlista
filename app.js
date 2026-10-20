@@ -9,7 +9,7 @@ import {
   runTransaction, writeBatch, serverTimestamp, Timestamp, increment,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { firebaseConfig, recipeImportUrl } from "./config.js";
-import { scaleIngredient, isBasic, DEFAULT_BASICS, mergeQty, itemKey } from "./ingredients.js?v=24";
+import { scaleIngredient, isBasic, DEFAULT_BASICS, mergeQty, itemKey } from "./ingredients.js?v=25";
 
 const DAY = 24 * 60 * 60 * 1000;
 // Standardlistan. Varor från innan det fanns flera listor saknar listId och hör hit.
@@ -770,9 +770,23 @@ const weekId = (monday) => {
 let weekStart = mondayOf(new Date());
 let editing = null;
 
-$("weekPrev").onclick = () => { weekStart = addDays(weekStart, -7); renderMenu(); };
-$("weekNext").onclick = () => { weekStart = addDays(weekStart, 7); renderMenu(); };
-$("weekToday").onclick = () => { weekStart = mondayOf(new Date()); renderMenu(); };
+// Har man bläddrat i veckomenyn hamnar nya recept på den veckan man tittade på.
+let weekChosen = false;
+$("weekPrev").onclick = () => { weekStart = addDays(weekStart, -7); weekChosen = true; renderMenu(); };
+$("weekNext").onclick = () => { weekStart = addDays(weekStart, 7); weekChosen = true; renderMenu(); };
+$("weekToday").onclick = () => { weekStart = mondayOf(new Date()); weekChosen = true; renderMenu(); };
+
+// Veckan ett recept läggs på från början: veckan man senast tittade på, annars nästa vecka
+// från fredag (då planerar man oftast kommande vecka), annars denna vecka.
+function defaultPlanWeek() {
+  if (weekChosen) return weekStart;
+  const now = new Date();
+  return [5, 6, 0].includes(now.getDay()) ? addDays(mondayOf(now), 7) : mondayOf(now);
+}
+const weekLabel = (monday) => {
+  const fmt = (d) => d.toLocaleDateString("sv-SE", { day: "numeric", month: "short" });
+  return `Vecka ${isoWeek(monday).week} · ${fmt(monday)}–${fmt(addDays(monday, 6))}`;
+};
 $("copyWeek").onclick = () => chooseWeekToCopy();
 
 const MEAL_KEYS = DAYS.flatMap((_, i) => MEALS.map(([m]) => `d${i}_${m}`));
@@ -826,103 +840,149 @@ function copyWeek(srcId) {
   const src = menus[srcId];
   const targetMonday = weekStart;
   const targetId = weekId(targetMonday);
-  if (weekHasFood(menus[targetId]) && !confirm(`Vecka ${isoWeek(targetMonday).week} har redan rätter. Vill du ersätta dem?`)) return;
+  const srcWeek = isoWeek(mondayFromId(srcId)).week;
+  const targetWeek = isoWeek(targetMonday).week;
 
+  // Måltiderna med mat i källveckan; alla är valda från början.
+  const slots = [];
+  DAYS.forEach((dayName, i) => MEALS.forEach(([m, label]) => {
+    const key = `d${i}_${m}`;
+    if ((src[key] || "").trim()) slots.push({ key, where: `${dayName} ${label.toLowerCase()}`, dish: dishName(src[key]) || src[key].split("\n")[0], on: true });
+  }));
   // En post per rätt från ett recept, med egna portioner och egna urbockade varor.
   const meals = [];
-  DAYS.forEach((dayName, i) => MEALS.forEach(([m, label]) => {
-    for (const x of recipesInMeal(src, `d${i}_${m}`)) {
+  for (const slot of slots) {
+    for (const x of recipesInMeal(src, slot.key)) {
       const unchecked = new Set();
       (x.recipe.ingredients || []).forEach((line, j) => { if (isBasic(scaleIngredient(line, 1).name, basics)) unchecked.add(j); });
-      meals.push({ ...x, where: `${dayName} ${label.toLowerCase()}`, unchecked });
+      meals.push({ ...x, slot, unchecked });
     }
-  }));
+  }
+  const chosenMeals = () => meals.filter((m) => m.slot.on);
 
   const commit = async (listId, toCheck = false) => {
+    const chosen = slots.filter((x) => x.on);
+    if (!chosen.length) return;
+    const target = menus[targetId] || {};
+    if (chosen.some((x) => (target[x.key] || "").trim()) &&
+      !confirm(`Vecka ${targetWeek} har redan mat på några av de valda dagarna. Vill du ersätta den?`)) return;
     const batch = writeBatch(db);
     const data = { updatedAt: serverTimestamp() };
-    for (const k of MEAL_KEYS) {
-      data[k] = src[k] || "";
-      data[`${k}_recipes`] = src[`${k}_recipes`] || [];
+    for (const { key } of chosen) {
+      data[key] = src[key] || "";
+      data[`${key}_recipes`] = src[`${key}_recipes`] || [];
     }
-    batch.set(doc(menusCol, targetId), data);
+    batch.set(doc(menusCol, targetId), data, { merge: true });
     const entries = [];
-    for (const meal of meals) {
+    for (const meal of chosenMeals()) {
       const factor = meal.portions / (meal.recipe.servings || 4);
       (meal.recipe.ingredients || []).forEach((line, j) => {
         if (!meal.unchecked.has(j)) entries.push({ ...scaleIngredient(line, factor), recipe: meal.recipe.title });
       });
     }
     queueItems(batch, entries, listId, toCheck);
-    for (const id of new Set(meals.map((m) => m.recipe.id))) {
+    for (const id of new Set(chosenMeals().map((m) => m.recipe.id))) {
       batch.update(doc(recipesCol, id), { timesPlanned: increment(1), lastPlanned: serverTimestamp() });
     }
     await batch.commit();
     entries.forEach((e) => remember(e.name, e.qty));
     renderMenu();
-    showUndo(`Vecka ${isoWeek(mondayFromId(srcId)).week} kopierad${entries.length ? `, ${entries.length} varor ${toCheck ? "att kolla" : "på listan"}` : ""}`, null);
+    const what = chosen.length === slots.length ? `Vecka ${srcWeek} kopierad` : `${chosen.length} ${chosen.length === 1 ? "måltid kopierad" : "måltider kopierade"}`;
+    showUndo(`${what}${entries.length ? `, ${entries.length} varor ${toCheck ? "att kolla" : "på listan"}` : ""}`, null);
   };
 
-  if (!meals.length) { commit(MAIN_LIST); return; }
-
-  openSheet(`Kopiera vecka ${isoWeek(mondayFromId(srcId)).week} till vecka ${isoWeek(targetMonday).week}`, (body) => {
-    const p = document.createElement("p");
-    p.className = "muted small";
-    p.textContent = "Välj portioner och bocka ur det ni redan har hemma. Basvarorna är redan urbockade.";
-    body.append(p);
+  openSheet(`Från vecka ${srcWeek} till vecka ${targetWeek}`, (body) => {
     let listId = MAIN_LIST;
+    const h = document.createElement("div");
+    h.className = "label";
+    h.textContent = "Vilka måltider vill du kopiera?";
+    const picks = document.createElement("div");
+    picks.className = "checklist";
+    const ingredients = document.createElement("div");
     const listSel = document.createElement("select");
     for (const l of sortedLists()) listSel.add(new Option(l.name, l.id));
     listSel.onchange = () => { listId = listSel.value; };
-    body.append(field("Inköpslista", listSel));
+    const listField = field("Inköpslista", listSel);
     const go = button("", async () => { $("sheet").close(); await commit(listId); });
-    const updateButton = () => {
-      const n = meals.reduce((sum, m) => sum + (m.recipe.ingredients || []).length - m.unchecked.size, 0);
-      go.textContent = n ? `Kopiera veckan och lägg ${n} varor på listan` : "Kopiera bara veckan";
-    };
-    for (const meal of meals) {
-      const h = document.createElement("div");
-      h.className = "label";
-      h.textContent = `${meal.where}: ${meal.recipe.title}`;
-      const stepper = document.createElement("div");
-      stepper.className = "stepper";
-      const count = document.createElement("b");
-      const list = document.createElement("div");
-      list.className = "checklist";
-      const render = () => {
-        count.textContent = meal.portions;
-        list.innerHTML = "";
-        (meal.recipe.ingredients || []).forEach((line, j) => {
-          const sc = scaleIngredient(line, meal.portions / (meal.recipe.servings || 4));
-          const label = document.createElement("label");
-          const cb = document.createElement("input");
-          cb.type = "checkbox";
-          cb.checked = !meal.unchecked.has(j);
-          cb.onchange = () => { cb.checked ? meal.unchecked.delete(j) : meal.unchecked.add(j); updateButton(); };
-          const name = document.createElement("span");
-          name.textContent = sc.name;
-          const q = document.createElement("span");
-          q.className = "q";
-          q.textContent = sc.qty;
-          label.append(cb, name, q);
-          list.append(label);
-        });
-      };
-      const minus = button("−", () => { meal.portions = Math.max(1, meal.portions - 1); render(); }, "");
-      const plus = button("+", () => { meal.portions += 1; render(); }, "");
-      const unit = document.createElement("span");
-      unit.className = "muted";
-      unit.textContent = "portioner";
-      stepper.append(minus, count, plus, unit);
-      body.append(h, stepper, list);
-      render();
-    }
     const unsure = button("Vet inte vad som finns hemma", async () => { $("sheet").close(); await commit(listId, true); }, "chip wide");
+    const hint = unsureHint();
+
+    const updateButton = () => {
+      const count = slots.filter((x) => x.on).length;
+      const n = chosenMeals().reduce((sum, m) => sum + (m.recipe.ingredients || []).length - m.unchecked.size, 0);
+      const word = count === 1 ? "måltid" : "måltider";
+      go.disabled = !count;
+      go.textContent = !count ? "Välj minst en måltid" : n ? `Kopiera ${count} ${word} och lägg ${n} varor på listan` : `Kopiera ${count} ${word}`;
+      listField.hidden = unsure.hidden = hint.hidden = !chosenMeals().length;
+    };
+
+    const renderIngredients = () => {
+      ingredients.innerHTML = "";
+      if (chosenMeals().length) {
+        const p = document.createElement("p");
+        p.className = "muted small";
+        p.textContent = "Välj portioner och bocka ur det ni redan har hemma. Basvarorna är redan urbockade.";
+        ingredients.append(p);
+      }
+      for (const meal of chosenMeals()) {
+        const t = document.createElement("div");
+        t.className = "label";
+        t.textContent = `${meal.slot.where}: ${meal.recipe.title}`;
+        const stepper = document.createElement("div");
+        stepper.className = "stepper";
+        const count = document.createElement("b");
+        const list = document.createElement("div");
+        list.className = "checklist";
+        const render = () => {
+          count.textContent = meal.portions;
+          list.innerHTML = "";
+          (meal.recipe.ingredients || []).forEach((line, j) => {
+            const sc = scaleIngredient(line, meal.portions / (meal.recipe.servings || 4));
+            const label = document.createElement("label");
+            const cb = document.createElement("input");
+            cb.type = "checkbox";
+            cb.checked = !meal.unchecked.has(j);
+            cb.onchange = () => { cb.checked ? meal.unchecked.delete(j) : meal.unchecked.add(j); updateButton(); };
+            const name = document.createElement("span");
+            name.textContent = sc.name;
+            const q = document.createElement("span");
+            q.className = "q";
+            q.textContent = sc.qty;
+            label.append(cb, name, q);
+            list.append(label);
+          });
+        };
+        const minus = button("−", () => { meal.portions = Math.max(1, meal.portions - 1); render(); }, "");
+        const plus = button("+", () => { meal.portions += 1; render(); }, "");
+        const unit = document.createElement("span");
+        unit.className = "muted";
+        unit.textContent = "portioner";
+        stepper.append(minus, count, plus, unit);
+        ingredients.append(t, stepper, list);
+        render();
+      }
+      updateButton();
+    };
+
+    for (const slot of slots) {
+      const label = document.createElement("label");
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = slot.on;
+      cb.onchange = () => { slot.on = cb.checked; renderIngredients(); };
+      const name = document.createElement("span");
+      name.textContent = slot.dish;
+      const q = document.createElement("span");
+      q.className = "q";
+      q.textContent = slot.where;
+      label.append(cb, name, q);
+      picks.append(label);
+    }
     const actions = document.createElement("div");
     actions.className = "actions";
-    actions.append(go, unsure, unsureHint());
-    body.append(actions);
-    updateButton();
+    actions.append(go, unsure, hint);
+    body.append(h, picks, ingredients, listField, actions);
+    renderIngredients();
   });
 }
 
@@ -1555,13 +1615,24 @@ function tidySteps(lines) {
 function planRecipe(r, portions = 4) {
   const today = (new Date().getDay() + 6) % 7;
   const thisWeek = mondayOf(new Date());
-  const state = { week: 0, day: today, meal: "dinner", portions, listId: MAIN_LIST, unchecked: new Set() };
+  const monday = defaultPlanWeek();
+  const state = { monday, day: +monday === +thisWeek ? today : 0, meal: "dinner", portions, listId: MAIN_LIST, unchecked: new Set() };
   const base = r.servings || 4;
   // Basvaror är urbockade från början.
   (r.ingredients || []).forEach((line, i) => { if (isBasic(scaleIngredient(line, 1).name, basics)) state.unchecked.add(i); });
 
   openSheet(r.title, (body) => {
-    const weekSeg = seg([["Denna vecka", 0], ["Nästa vecka", 1]], () => state.week, (v) => { state.week = v; daySeg.refresh(); });
+    const weekSeg = document.createElement("div");
+    weekSeg.className = "weekpick";
+    const wl = document.createElement("b");
+    const step = (n) => { state.monday = addDays(state.monday, n * 7); wl.textContent = weekLabel(state.monday); };
+    const prev = button("‹", () => step(-1), "icon big");
+    const next = button("›", () => step(1), "icon big");
+    prev.type = next.type = "button";
+    prev.setAttribute("aria-label", "Föregående vecka");
+    next.setAttribute("aria-label", "Nästa vecka");
+    wl.textContent = weekLabel(state.monday);
+    weekSeg.append(prev, wl, next);
     const daySeg = seg(DAYS.map((d, i) => [d.slice(0, 2), i]), () => state.day, (v) => { state.day = v; });
     const mealSeg = seg(MEALS.map(([k, label]) => [label, k]), () => state.meal, (v) => { state.meal = v; });
 
@@ -1585,7 +1656,7 @@ function planRecipe(r, portions = 4) {
     checklist.className = "checklist";
     const go = button("", async () => {
       $("sheet").close();
-      await addPlannedRecipe(r, state, base, addDays(thisWeek, state.week * 7));
+      await addPlannedRecipe(r, state, base, state.monday);
     });
 
     function update() {
@@ -1628,7 +1699,7 @@ function planRecipe(r, portions = 4) {
     body.append(h, checklist);
     const unsure = button("Vet inte vad som finns hemma", async () => {
       $("sheet").close();
-      await addPlannedRecipe(r, { ...state, toCheck: true }, base, addDays(thisWeek, state.week * 7));
+      await addPlannedRecipe(r, { ...state, toCheck: true }, base, state.monday);
     }, "chip wide");
     const actions = document.createElement("div");
     actions.className = "actions";
@@ -1715,7 +1786,7 @@ async function addPlannedRecipe(r, state, base, monday) {
   batch.update(doc(recipesCol, r.id), { timesPlanned: increment(1), lastPlanned: serverTimestamp() });
   await batch.commit();
   added.forEach((s) => remember(s.name, s.qty));
-  const where = `${DAYS[state.day].toLowerCase()} ${state.meal === "lunch" ? "lunch" : "middag"}`;
+  const where = `${DAYS[state.day].toLowerCase()} ${state.meal === "lunch" ? "lunch" : "middag"} v.${isoWeek(monday).week}`;
   showUndo(added.length ? `${r.title} på ${where}, ${added.length} varor ${state.toCheck ? "att kolla" : "på listan"}` : `${r.title} på ${where}`, null);
 }
 

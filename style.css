@@ -377,3 +377,6 @@ button.decide { flex: none; width: 38px; height: 38px; margin: 4px 2px; border-r
 button.decide.yes { color: var(--green); border-color: var(--green); }
 button.decide.no { color: var(--muted); }
 button.decide:last-child { margin-right: 8px; }
+.weekpick { display: flex; align-items: center; justify-content: space-between; border: 1px solid var(--line); border-radius: 12px; padding: 2px; }
+.weekpick b { font-size: 15px; font-weight: 600; text-align: center; }
+.weekpick button.icon.big { font-size: 26px; padding: 2px 14px; }
