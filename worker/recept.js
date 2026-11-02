@@ -284,8 +284,8 @@ function normalizeRecipe(r) {
   return {
     title: clean(r.name || ""),
     servings: parseYield(r.recipeYield),
-    ingredients: [].concat(r.recipeIngredient || r.ingredients || []).map(clean).filter(Boolean),
-    instructions: flattenInstructions(r.recipeInstructions).map(clean).filter(Boolean),
+    ingredients: [].concat(r.recipeIngredient || r.ingredients || []).map(clean).filter((l) => l && !looksLikeCode(l)),
+    instructions: flattenInstructions(r.recipeInstructions).map(clean).filter((l) => l && !looksLikeCode(l)),
     image: imageUrl(r.image),
     minutes: isoMinutes(r.totalTime) || (isoMinutes(r.prepTime) + isoMinutes(r.cookTime)) || null,
   };
@@ -320,9 +320,12 @@ function imageUrl(img) {
   return img.url || img.contentUrl || "";
 }
 
+// Tar bort HTML även när den var kodad (&lt;div&gt;) och därför dyker upp först efter avkodningen.
 function clean(s) {
-  return decodeEntities(String(s).replace(/<[^>]*>/g, " ")).replace(/\s+/g, " ").trim();
+  return decodeEntities(String(s).replace(/<[^>]*>/g, " ")).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
+// Rader som ändå ser ut som kod (t.ex. data-vue="..." från sidor byggda med Vue) är aldrig recepttext.
+const looksLikeCode = (l) => /[<>]|\b[\w-]+="[^"]*"|^[\w-]+=|[{}]/.test(l);
 
 function decodeEntities(s) {
   const named = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", aring: "å", auml: "ä", ouml: "ö", Aring: "Å", Auml: "Ä", Ouml: "Ö", eacute: "é", frac12: "½", frac14: "¼", frac34: "¾" };
@@ -336,7 +339,7 @@ function decodeEntities(s) {
 
 const START_RE = /^(ingredienser|ingrediens|du behöver|det här behöver du|detta behöver du|till \d+ (portioner|personer))\b/i;
 const STOP_RE = /^(gör så här|så här gör du|så gör du|gör så|instruktioner|instruktion|tillagning|tillvägagångssätt|beskrivning|metod)\b/i;
-const END_RE = /^(dela|kommentarer|kommentera|taggar|läs (också|mer)|relaterat|annons|publicerad|smaklig måltid)\b/i;
+const END_RE = /^(näringsvärde|näring|dela|kommentarer|kommentera|taggar|läs (också|mer)|relaterat|annons|publicerad|smaklig måltid)\b/i;
 const QTY_LINE = /^(ca\.?\s*|cirka\s*)?(\d|½|¼|¾|⅓|⅔)/;
 
 function htmlToLines(html) {
@@ -344,13 +347,19 @@ function htmlToLines(html) {
     .replace(/<(script|style|noscript|svg|nav|header|footer|aside|form|button)\b[\s\S]*?<\/\1>/gi, " ")
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/(p|li|h[1-6]|div|tr|dt|dd|section|article|blockquote)>/gi, "\n")
-    .replace(/<li[^>]*>/gi, "\n");
+    .replace(/<li[^>]*>/gi, "\n")
+    // Övriga taggar tas bort innan texten delas i rader, så att taggar över flera rader försvinner helt.
+    .replace(/<[^>]*>/g, " ");
   return body.split("\n")
     .map((l) => clean(l).replace(/^[•·\-–*▪◦]\s*/, "").trim())
-    .filter(Boolean);
+    .filter((l) => l && !looksLikeCode(l));
 }
 
-const isHeading = (l) => /:$/.test(l) && l.length < 40;
+const isHeading = (l) => (/:$/.test(l) && l.length < 40) || SECTION_RE.test(l);
+// Underrubriker i ingredienslistan, t.ex. "Tillbehör" på Arla.
+const SECTION_RE = /^(tillbehör|till servering|servering|garnering|topping|sås|dressing|deg|botten|fyllning|marinad|glasyr|smet)$/i;
+// En rad med bara mängd, t.ex. "5 dl" eller "3", när namn och mängd står i olika element.
+const QTY_ONLY = /^(ca\.?\s*)?(\d+([.,]\d+)?(\s*[-–]\s*\d+)?|½|¼|¾|\d+\/\d+)\s*(dl|cl|ml|l|msk|tsk|krm|g|kg|hg|st|förp|paket|burk|krm|klyftor?|skivor?|port)?\.?$/i;
 const looksLikeIngredient = (l) => l.length <= 90 && !/[.!?]$/.test(l.replace(/\b(ca|st|förp|msk|tsk|krm|pkt)\.$/i, ""));
 
 export function extractFromText(html) {
@@ -362,12 +371,23 @@ export function extractFromText(html) {
   const start = lines.findIndex((l) => START_RE.test(l));
   if (start >= 0) {
     let i = start + 1;
+    let pending = null, lastWasName = false;
     for (; i < lines.length && ingredients.length < 50; i++) {
       const l = lines[i];
       if (STOP_RE.test(l) || END_RE.test(l)) break;
-      if (isHeading(l)) continue;
+      if (isHeading(l)) { lastWasName = false; continue; }
+      if (QTY_ONLY.test(l)) {
+        // Mängden hör till namnet strax före om det saknar mängd, annars till nästa rad.
+        const prev = ingredients[ingredients.length - 1];
+        if (lastWasName && prev && !QTY_LINE.test(prev)) ingredients[ingredients.length - 1] = `${l} ${prev}`;
+        else pending = l;
+        lastWasName = false;
+        continue;
+      }
       if (!looksLikeIngredient(l)) { if (ingredients.length >= 3) break; continue; }
-      ingredients.push(l);
+      ingredients.push(pending ? `${pending} ${l}` : l);
+      lastWasName = !pending;
+      pending = null;
     }
     after = i;
   }
@@ -400,7 +420,7 @@ export function extractFromText(html) {
   const time = text.match(/(?:tillagningstid|total tid|tid)\s*:?\s*(?:ca\.?\s*)?(\d+)\s*(min|minuter|tim|timmar|h)\b/i);
   return {
     title: metaContent(html, "og:title") || clean((html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i) || [])[1] || "") || pageTitle(html),
-    servings: servings ? parseInt(servings[1], 10) : null,
+    servings: servings && parseInt(servings[1], 10) > 1 ? parseInt(servings[1], 10) : null,
     ingredients,
     instructions,
     image: metaContent(html, "og:image"),

@@ -9,7 +9,7 @@ import {
   runTransaction, writeBatch, serverTimestamp, Timestamp, increment,
 } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 import { firebaseConfig, recipeImportUrl } from "./config.js";
-import { scaleIngredient, isBasic, DEFAULT_BASICS, mergeQty, itemKey } from "./ingredients.js?v=25";
+import { scaleIngredient, isBasic, DEFAULT_BASICS, mergeQty, itemKey } from "./ingredients.js?v=26";
 
 const DAY = 24 * 60 * 60 * 1000;
 // Standardlistan. Varor från innan det fanns flera listor saknar listId och hör hit.
@@ -1381,6 +1381,10 @@ async function importRecipe(url) {
   try {
     const res = await fetch(`${recipeImportUrl}?url=${encodeURIComponent(url)}`);
     const data = await res.json().catch(() => ({}));
+    // Skydd mot att kod från sidan (t.ex. <div data-vue="...">) hamnar bland ingredienserna.
+    const isText = (l) => typeof l === "string" && l.trim() && !/[<>{}]|\b[\w-]+="[^"]*"|^[\w-]+=/.test(l);
+    data.ingredients = (data.ingredients || []).filter(isText);
+    data.instructions = (data.instructions || []).filter(isText);
     if (!res.ok || !data.ingredients?.length) throw Object.assign(new Error("no-recipe"), { data });
     const recipe = {
       title: data.title || hostOf(url), url: data.url || url, image: data.image || "",
